@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { LOW_STOCK_THRESHOLD_M } from '../../constants/inventory';
+import { LOW_STOCK_THRESHOLD_UNITS } from '../../constants/inventory';
 import { useApp } from '../../contexts/AppContext';
 import { useOrders } from '../../hooks/useOrders';
 import { useStorehouse } from '../../hooks/useStorehouse';
@@ -89,7 +89,7 @@ export const EmployeeAnalytics: React.FC<Props> = ({
 
   const lowStockCount = useMemo(
     () =>
-      hideInventory ? 0 : inventory.filter((i) => i.quantityM <= LOW_STOCK_THRESHOLD_M).length,
+      hideInventory ? 0 : inventory.filter((i) => i.quantity <= LOW_STOCK_THRESHOLD_UNITS).length,
     [hideInventory, inventory],
   );
 
@@ -222,7 +222,7 @@ export const EmployeeAnalytics: React.FC<Props> = ({
             </p>
             <p className="mt-1 text-3xl font-bold text-slate-900 dark:text-slate-100">{lowStockCount}</p>
             <p className="mt-1 text-[11px] text-slate-500">
-              {t('widgetLowStockHint').replace('{threshold}', String(LOW_STOCK_THRESHOLD_M))}
+              {t('widgetLowStockHint').replace('{threshold}', String(LOW_STOCK_THRESHOLD_UNITS))}
             </p>
           </button>
         )}

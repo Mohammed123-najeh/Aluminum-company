@@ -12,13 +12,13 @@ class Inventory extends Model
     protected $fillable = [
         'profile_id',
         'color_code',
-        'quantity_m',
+        'quantity',
     ];
 
     protected function casts(): array
     {
         return [
-            'quantity_m' => 'decimal:3',
+            'quantity' => 'integer',
         ];
     }
 

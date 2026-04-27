@@ -97,15 +97,15 @@ class StorehouseSeeder extends Seeder
             Color::updateOrCreate(['color_code' => $c['color_code']], $c);
         }
 
-        // Seed inventory: one row per profile+color with demo stock (10–30 m) for sales / supervisor flows
+        // Seed inventory: one row per profile+color with demo stock (10–30 units) for sales / supervisor flows
         $profileIds = Profile::pluck('id')->toArray();
         $colorCodes = Color::pluck('color_code')->toArray();
         foreach ($profileIds as $profileId) {
             foreach ($colorCodes as $colorCode) {
-                $qty = round(random_int(10000, 30000) / 1000, 3); // 10.000 – 30.000 m
+                $qty = random_int(10, 30);
                 Inventory::updateOrCreate(
                     ['profile_id' => $profileId, 'color_code' => $colorCode],
-                    ['quantity_m' => $qty]
+                    ['quantity' => $qty]
                 );
             }
         }

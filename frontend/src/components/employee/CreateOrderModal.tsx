@@ -10,8 +10,8 @@ type LineItem = {
   profileName: string;
   colorCode: string;
   colorName: string;
-  quantityM: number;
-  unitPricePerM?: number;
+  quantity: number;
+  unitPrice?: number;
 };
 
 type ProductOption = {
@@ -63,7 +63,7 @@ export const CreateOrderModal: React.FC<Props> = ({
   const [lines, setLines] = useState<LineItem[]>([]);
   const [saving, setSaving] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<string>('');
-  const [quantityM, setQuantityM] = useState<string>('');
+  const [quantityInput, setQuantityInput] = useState<string>('');
   const [productQuery, setProductQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [productOpen, setProductOpen] = useState(false);
@@ -75,8 +75,8 @@ export const CreateOrderModal: React.FC<Props> = ({
   const priceByProfileColor = useMemo(() => {
     const m = new Map<string, number>();
     for (const row of inventory) {
-      if (row.unitPricePerM == null || !Number.isFinite(row.unitPricePerM)) continue;
-      m.set(invKey(row.profileId, row.colorCode), row.unitPricePerM);
+      if (row.unitPrice == null || !Number.isFinite(row.unitPrice)) continue;
+      m.set(invKey(row.profileId, row.colorCode), row.unitPrice);
     }
     return m;
   }, [inventory]);
@@ -142,7 +142,7 @@ export const CreateOrderModal: React.FC<Props> = ({
   const lineAmounts = useMemo(
     () =>
       lines.map((l) =>
-        l.unitPricePerM != null && Number.isFinite(l.unitPricePerM) ? l.unitPricePerM * l.quantityM : null,
+        l.unitPrice != null && Number.isFinite(l.unitPrice) ? l.unitPrice * l.quantity : null,
       ),
     [lines],
   );
@@ -192,8 +192,8 @@ export const CreateOrderModal: React.FC<Props> = ({
   }, [categoryFilter]);
 
   const addLine = () => {
-    const qty = parseFloat(quantityM);
-    if (!selectedProduct || !Number.isFinite(qty) || qty <= 0) return;
+    const qty = parseInt(quantityInput, 10);
+    if (!selectedProduct || !Number.isFinite(qty) || qty < 1) return;
     const opt = productOptions.find((o) => o.value === selectedProduct);
     if (!opt) return;
     const up = unitPriceFor(opt.profileId, opt.colorCode);
@@ -205,11 +205,11 @@ export const CreateOrderModal: React.FC<Props> = ({
         profileName: opt.profileName,
         colorCode: opt.colorCode,
         colorName: opt.colorName,
-        quantityM: qty,
-        ...(up != null ? { unitPricePerM: up } : {}),
+        quantity: qty,
+        ...(up != null ? { unitPrice: up } : {}),
       },
     ]);
-    setQuantityM('');
+    setQuantityInput('');
     setSelectedProduct('');
     setProductQuery('');
   };
@@ -226,7 +226,7 @@ export const CreateOrderModal: React.FC<Props> = ({
       await onSubmit({
         customer_reference: customerReference.trim() || null,
         task_id: taskIdToLink ?? undefined,
-        items: lines.map((l) => ({ profile_id: l.profileId, color_code: l.colorCode, quantity_m: l.quantityM })),
+        items: lines.map((l) => ({ profile_id: l.profileId, color_code: l.colorCode, quantity: l.quantity })),
       });
       onClose();
     } finally {
@@ -375,11 +375,11 @@ export const CreateOrderModal: React.FC<Props> = ({
                   </div>
                   <input
                     type="number"
-                    step="0.001"
-                    min="0.001"
-                    value={quantityM}
-                    onChange={(e) => setQuantityM(e.target.value)}
-                    placeholder={t('quantityM')}
+                    step="1"
+                    min="1"
+                    value={quantityInput}
+                    onChange={(e) => setQuantityInput(e.target.value)}
+                    placeholder={t('quantityUnits')}
                     className="w-28 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
                   />
                   <button
@@ -412,17 +412,18 @@ export const CreateOrderModal: React.FC<Props> = ({
                 <ul className="space-y-2">
                   {lines.map((line, i) => {
                     const lineEst: number | null =
-                      line.unitPricePerM != null ? line.unitPricePerM * line.quantityM : null;
+                      line.unitPrice != null ? line.unitPrice * line.quantity : null;
                     return (
                       <li
                         key={i}
                         className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800"
                       >
                         <span className="min-w-0">
-                          {line.profileCode} – {line.profileName} / {line.colorName} × {line.quantityM} m
-                          {line.unitPricePerM != null && (
+                          {line.profileCode} – {line.profileName} / {line.colorName} × {line.quantity}{' '}
+                          {t('unitsShort')}
+                          {line.unitPrice != null && (
                             <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
-                              ({formatIls(line.unitPricePerM)}/m
+                              ({formatIls(line.unitPrice)}/{t('unitsShort')}
                               {lineEst !== null ? ` → ${formatIls(lineEst)}` : ''})
                             </span>
                           )}

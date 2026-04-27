@@ -254,7 +254,7 @@ export type ApiTaskOrderItem = {
   categoryName?: string | null;
   colorCode: string;
   colorName: string;
-  quantityM: number;
+  quantity: number;
 };
 
 export type ApiTaskAttachment = {
@@ -368,7 +368,7 @@ export type ApiAdminAnalytics = {
   };
   storehouse: {
     inventoryRows: number;
-    totalQuantityM: number;
+    totalQuantityUnits: number;
   };
   ai: {
     conversations: number;
@@ -500,9 +500,9 @@ export type ApiInventoryItem = {
   usage?: string | null;
   colorCode: string;
   colorName: string;
-  quantityM: number;
-  /** List price per meter (same formula as sales), when returned by API. */
-  unitPricePerM?: number | null;
+  quantity: number;
+  /** List price per unit (same formula as sales), when returned by API. */
+  unitPrice?: number | null;
 };
 
 export const storehouseApi = {
@@ -527,12 +527,12 @@ export const storehouseApi = {
     return request<ApiInventoryItem[]>('GET', q ? `/storehouse/inventory?${q}` : '/storehouse/inventory', undefined, token);
   },
   inventoryCreate: (
-    payload: { profile_id: number; color_code: string; quantity_m: number },
+    payload: { profile_id: number; color_code: string; quantity: number },
     token: string,
   ) => request<ApiInventoryItem>('POST', '/storehouse/inventory', payload, token),
   inventoryUpdate: (
     id: number,
-    payload: { profile_id: number; color_code: string; quantity_m: number },
+    payload: { profile_id: number; color_code: string; quantity: number },
     token: string,
   ) => request<ApiInventoryItem>('PATCH', `/storehouse/inventory/${id}`, payload, token),
   inventoryDelete: (id: number, token: string) =>
@@ -549,10 +549,20 @@ export type ApiOrderItem = {
   categoryName?: string | null;
   colorCode: string;
   colorName: string;
-  quantityM: number;
+  quantity: number;
   notes?: string | null;
-  unitPricePerM?: number | null;
+  unitPrice?: number | null;
   lineTotal?: number | null;
+};
+
+export type ApiOrderPayment = {
+  id: string;
+  amount: number;
+  paidAt: string;
+  recordedById: string | null;
+  recordedByName: string | null;
+  note: string | null;
+  createdAt: string;
 };
 
 export type ApiOrder = {
@@ -584,7 +594,7 @@ export type ApiOrder = {
   updatedAt: string;
 };
 
-/** Sales catalog row with list price per meter (deterministic on server). */
+/** Sales catalog row with list price per unit (deterministic on server). */
 export type ApiInventoryOffer = {
   inventoryId: number;
   profileId: number;
@@ -595,8 +605,8 @@ export type ApiInventoryOffer = {
   usage: string | null;
   colorCode: string;
   colorName: string;
-  quantityM: number;
-  unitPricePerM: number;
+  quantity: number;
+  unitPrice: number;
 };
 
 export type ApiFulfillTaskResponse = {
@@ -613,8 +623,8 @@ export type ApiFulfillTaskResponse = {
   lines: Array<{
     profileName: string;
     colorName: string;
-    quantityM: number;
-    unitPricePerM: number;
+    quantity: number;
+    unitPrice: number;
     lineTotal: number;
   }>;
   issuedAt: string;
@@ -627,7 +637,7 @@ export const salesApi = {
     payload: {
       task_id: string;
       customer_reference?: string | null;
-      items: Array<{ inventory_id: number; quantity_m: number }>;
+      items: Array<{ inventory_id: number; quantity: number }>;
       initial_amount_paid?: number;
       payment_due_at?: string | null;
       payment_notes?: string | null;
@@ -643,7 +653,7 @@ export type CreateOrderPayload = {
   items: Array<{
     profile_id: number;
     color_code: string;
-    quantity_m: number;
+    quantity: number;
     notes?: string | null;
   }>;
 };
@@ -747,6 +757,15 @@ export const ordersApi = {
       payment_notes?: string | null;
     },
   ) => request<ApiOrder>('PATCH', `/orders/${id}/payment`, body, token),
+  listPayments: (id: string, token: string) =>
+    request<ApiOrderPayment[]>('GET', `/orders/${id}/payments`, undefined, token),
+  addPayment: (
+    id: string,
+    token: string,
+    body: { amount: number; paid_at?: string | null; note?: string | null },
+  ) => request<ApiOrder>('POST', `/orders/${id}/payments`, body, token),
+  updateReceiptMeta: (id: string, token: string, body: { customer_reference?: string | null }) =>
+    request<ApiOrder>('PATCH', `/orders/${id}/receipt-meta`, body, token),
 };
 
 // ── Clients (supervisor) ────────────────────────────────────────────────────
@@ -805,6 +824,9 @@ export type ApiLeaveRequest = {
   userId: string;
   userName?: string | null;
   userEmail?: string | null;
+  supervisorId?: string | null;
+  /** present while status is `pending` */
+  workflowStep?: 'supervisor' | 'hr' | null;
   type: 'holiday' | 'sick';
   startDate: string;
   endDate: string;
@@ -892,6 +914,13 @@ export const leaveRequestsApi = {
     return request<ApiLeaveRequest[]>('GET', `/leave-requests${q}`, undefined, token);
   },
 
+  listSupervisorQueue: (token: string, type?: 'holiday' | 'sick') => {
+    const p = new URLSearchParams();
+    if (type) p.set('type', type);
+    const qs = p.toString();
+    return request<ApiLeaveRequest[]>('GET', `/leave-requests/supervisor-queue${qs ? `?${qs}` : ''}`, undefined, token);
+  },
+
   create: (
     token: string,
     body: { type: 'holiday' | 'sick'; start_date: string; end_date: string; reason?: string | null },
@@ -902,6 +931,12 @@ export const leaveRequestsApi = {
     id: string,
     body: { status: 'approved' | 'rejected'; decision_note?: string | null },
   ) => request<ApiLeaveRequest>('PATCH', `/leave-requests/${id}/decide`, body, token),
+
+  supervisorDecide: (
+    token: string,
+    id: string,
+    body: { decision: 'approved' | 'rejected'; decision_note?: string | null },
+  ) => request<ApiLeaveRequest>('PATCH', `/leave-requests/${id}/supervisor-decide`, body, token),
 
   cancel: (token: string, id: string) =>
     request<ApiLeaveRequest>('PATCH', `/leave-requests/${id}/cancel`, {}, token),

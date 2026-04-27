@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Client;
 use App\Models\Order;
+use App\Models\Message;
 use App\Models\Task;
 use App\Models\TaskAttachment;
 use App\Models\User;
@@ -160,6 +161,8 @@ class TaskController extends Controller
             return response()->json(['message' => 'You can only update your own tasks or tasks assigned to you'], 403);
         }
 
+        $prevStatus = $task->status;
+
         if ($isSupervisor) {
             $data = $request->validate([
                 'title' => 'sometimes|string|max:255',
@@ -222,11 +225,24 @@ class TaskController extends Controller
                 $task->assignees()->sync($data['assignee_ids']);
             }
             $task->save();
+
+            if (isset($data['status']) && $data['status'] === Task::STATUS_CANCELLED && $prevStatus !== Task::STATUS_CANCELLED) {
+                $task->load('assignees:id,name,email');
+                $body = 'Task #'.$task->id.' was cancelled by your supervisor. You do not need to work on it.';
+                foreach ($task->assignees as $assignee) {
+                    InAppNotifier::taskCancelledBySupervisor($assignee, $task);
+                    Message::create([
+                        'sender_id' => $user->id,
+                        'receiver_id' => $assignee->id,
+                        'body' => $body,
+                        'task_id' => $task->id,
+                    ]);
+                }
+            }
         } else {
-            // Assignee: can only update status
-            $oldStatus = $task->status;
+            // Assignee: only in_progress and completed
             $data = $request->validate([
-                'status' => 'required|in:' . implode(',', self::ALLOWED_STATUSES),
+                'status' => 'required|in:in_progress,completed',
             ]);
             $newStatus = $data['status'];
             if ($newStatus === Task::STATUS_COMPLETED && $task->status !== Task::STATUS_COMPLETED) {
@@ -237,7 +253,7 @@ class TaskController extends Controller
             $task->status = $newStatus;
             $task->save();
 
-            if ($oldStatus !== $newStatus) {
+            if ($prevStatus !== $newStatus) {
                 $supervisor = User::find($task->supervisor_id);
                 if ($supervisor) {
                     InAppNotifier::taskStatusForSupervisor($supervisor, $task->fresh(), $user, $newStatus);
@@ -298,7 +314,7 @@ class TaskController extends Controller
                     'categoryName' => $i->profile?->category?->category_name,
                     'colorCode' => $i->color_code,
                     'colorName' => $i->color?->name,
-                    'quantityM' => (float) $i->quantity_m,
+                    'quantity' => (int) $i->quantity,
                 ])->values()->toArray(),
             ];
         }

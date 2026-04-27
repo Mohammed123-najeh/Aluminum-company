@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import { useOrders } from '../../hooks/useOrders';
-import type { ApiOrder, ApiOrderItem } from '../../services/api';
+import type { ApiOrder, ApiOrderItem, ApiOrderPayment } from '../../services/api';
 import { formatIls } from '../../utils/currency';
 
 const PAGE_SIZE = 8;
@@ -30,7 +30,7 @@ function customerDisplayName(o: ApiOrder): string {
 
 function paymentBadgeClass(status: string | undefined): string {
   if (status === 'paid') return 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-200';
-  if (status === 'partial') return 'bg-amber-500/15 text-amber-900 dark:text-amber-200';
+  if (status === 'partial') return 'bg-orange-500/15 text-orange-900 dark:text-orange-200';
   if (status === 'unpaid') return 'bg-rose-500/15 text-rose-900 dark:text-rose-200';
   return 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200';
 }
@@ -59,7 +59,7 @@ function matchesDueFilter(o: ApiOrder, filter: string): boolean {
 function printReceiptHtml(order: ApiOrder, labels: Record<string, string>): string {
   const lines = order.items
     .map((it) => {
-      const parts = [it.profileName, it.colorName, `${it.quantityM} m`].filter(Boolean).join(' · ');
+      const parts = [it.profileName, it.colorName, `${it.quantity} ${labels.unitsShort ?? 'units'}`].filter(Boolean).join(' · ');
       const price = it.lineTotal != null ? formatIls(it.lineTotal) : '';
       return `<tr><td>${esc(parts)}</td><td style="text-align:right">${esc(price)}</td></tr>`;
     })
@@ -98,8 +98,10 @@ function printReceiptHtml(order: ApiOrder, labels: Record<string, string>): stri
 
 export const EmployeeSalesReceipts: React.FC<Props> = ({ showInnerHeading = true, isActive = true }) => {
   const { t, currentUser } = useApp();
-  const { orders, loading, error, refetch, updatePayment } = useOrders();
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { orders, loading, error, refetch, addOrderPayment, updateReceiptMeta, fetchOrderPayments } = useOrders();
+  const [detailOrder, setDetailOrder] = useState<ApiOrder | null>(null);
+  const [payHistory, setPayHistory] = useState<ApiOrderPayment[]>([]);
+  const [payHistoryLoading, setPayHistoryLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -165,6 +167,34 @@ export const EmployeeSalesReceipts: React.FC<Props> = ({ showInnerHeading = true
     return filtered.slice(start, start + PAGE_SIZE);
   }, [filtered, safePage]);
 
+  useEffect(() => {
+    if (!detailOrder) {
+      setPayHistory([]);
+      return;
+    }
+    let cancelled = false;
+    setPayHistoryLoading(true);
+    void fetchOrderPayments(detailOrder.id)
+      .then((rows) => {
+        if (!cancelled) setPayHistory(rows ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setPayHistory([]);
+      })
+      .finally(() => {
+        if (!cancelled) setPayHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [detailOrder, fetchOrderPayments]);
+
+  useEffect(() => {
+    if (!detailOrder) return;
+    const next = orders.find((o) => o.id === detailOrder.id);
+    if (next) setDetailOrder(next);
+  }, [orders, detailOrder?.id]);
+
   const openPrint = (order: ApiOrder) => {
     const w = window.open('', '_blank');
     if (!w) return;
@@ -183,6 +213,7 @@ export const EmployeeSalesReceipts: React.FC<Props> = ({ showInnerHeading = true
       ps_partial: t('receiptStatusPartial'),
       ps_unpaid: t('receiptStatusUnpaid'),
       ps_unknown: '—',
+      unitsShort: t('unitsShort'),
     });
     w.document.write(html);
     w.document.close();
@@ -261,12 +292,9 @@ export const EmployeeSalesReceipts: React.FC<Props> = ({ showInnerHeading = true
               )}
               <ReceiptRow
                 order={o}
-                expanded={expandedId === o.id}
-                onToggle={() => setExpandedId((id) => (id === o.id ? null : o.id))}
+                onOpenDetails={() => setDetailOrder(o)}
                 onPrint={() => openPrint(o)}
                 canEditPayment={canEditPayment}
-                onPaymentSaved={() => void refetch()}
-                updatePayment={updatePayment}
               />
             </li>
           );
@@ -295,49 +323,34 @@ export const EmployeeSalesReceipts: React.FC<Props> = ({ showInnerHeading = true
           </button>
         </div>
       )}
+
+      {detailOrder && (
+        <ReceiptDetailModal
+          order={detailOrder}
+          payHistory={payHistory}
+          payHistoryLoading={payHistoryLoading}
+          onClose={() => setDetailOrder(null)}
+          onRefreshHistory={() => {
+            void fetchOrderPayments(detailOrder.id).then((rows) => setPayHistory(rows ?? []));
+          }}
+          onRefetchOrders={() => void refetch()}
+          canEditPayment={canEditPayment}
+          addOrderPayment={addOrderPayment}
+          updateReceiptMeta={updateReceiptMeta}
+        />
+      )}
     </div>
   );
 };
 
 const ReceiptRow: React.FC<{
   order: ApiOrder;
-  expanded: boolean;
-  onToggle: () => void;
+  onOpenDetails: () => void;
   onPrint: () => void;
   canEditPayment: boolean;
-  onPaymentSaved: () => void;
-  updatePayment: ReturnType<typeof useOrders>['updatePayment'];
-}> = ({ order, expanded, onToggle, onPrint, canEditPayment, onPaymentSaved, updatePayment }) => {
+}> = ({ order, onOpenDetails, onPrint, canEditPayment: _canEdit }) => {
   const { t } = useApp();
-  const [payAmount, setPayAmount] = useState('');
-  const [payDue, setPayDue] = useState('');
-  const [payNotes, setPayNotes] = useState('');
-  const [paySaving, setPaySaving] = useState(false);
-  const [payErr, setPayErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (expanded) {
-      setPayAmount(order.amountPaid != null ? String(order.amountPaid) : '0');
-      setPayDue(order.paymentDueAt ?? '');
-      setPayNotes(order.paymentNotes ?? '');
-      setPayErr(null);
-    }
-  }, [expanded, order.amountPaid, order.paymentDueAt, order.paymentNotes, order.id, order.updatedAt]);
-
   const totalLabel = order.totalAmount != null ? formatIls(order.totalAmount) : '—';
-  const categories = useMemo(() => uniqueCategories(order.items), [order.items]);
-  const pricedLines = useMemo(
-    () =>
-      order.items
-        .map((it, i) => ({ it, i, line: it.lineTotal }))
-        .filter((x) => x.line != null && Number.isFinite(x.line)),
-    [order.items],
-  );
-  const sumFromLines = useMemo(
-    () => pricedLines.reduce((s, x) => s + (x.line as number), 0),
-    [pricedLines],
-  );
-
   const statusBadge =
     order.paymentStatus === 'paid'
       ? t('receiptStatusPaid')
@@ -347,40 +360,12 @@ const ReceiptRow: React.FC<{
           ? t('receiptStatusUnpaid')
           : (order.paymentStatus ?? '—');
 
-  const savePayment = async () => {
-    if (!canEditPayment || order.totalAmount == null) return;
-    const parsed = parseFloat(payAmount.replace(',', '.'));
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      setPayErr(t('receiptPaymentInvalidAmount'));
-      return;
-    }
-    const max = order.totalAmount;
-    if (parsed > max + 0.001) {
-      setPayErr(t('salesPaymentExceedsTotal'));
-      return;
-    }
-    setPaySaving(true);
-    setPayErr(null);
-    try {
-      await updatePayment(order.id, {
-        amount_paid: Math.round(parsed * 100) / 100,
-        payment_due_at: payDue.trim() || null,
-        payment_notes: payNotes.trim() || null,
-      });
-      onPaymentSaved();
-    } catch (e) {
-      setPayErr(e instanceof Error ? e.message : 'Error');
-    } finally {
-      setPaySaving(false);
-    }
-  };
-
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
       <div className="flex items-stretch gap-0">
         <button
           type="button"
-          onClick={onToggle}
+          onClick={onOpenDetails}
           className="flex min-w-0 flex-1 items-center justify-between gap-3 px-4 py-3 text-left text-sm transition hover:bg-slate-50 dark:hover:bg-slate-800/80"
         >
           <div className="min-w-0">
@@ -410,7 +395,7 @@ const ReceiptRow: React.FC<{
           </div>
           <div className="shrink-0 text-end">
             <p className="font-bold tabular-nums text-indigo-600 dark:text-indigo-400">{totalLabel}</p>
-            <p className="text-[10px] text-slate-400">{expanded ? '▲' : '▼'}</p>
+            <p className="text-[10px] text-slate-400">{t('receiptOpenDetails')}</p>
           </div>
         </button>
         <button
@@ -424,171 +409,266 @@ const ReceiptRow: React.FC<{
           {t('printReceipt')}
         </button>
       </div>
-      {expanded && (
-        <div className="space-y-3 border-t border-slate-100 px-4 py-3 text-sm dark:border-slate-700">
-          <dl className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
-            <div>
-              <dt className="font-medium text-slate-500 dark:text-slate-400">{t('receiptOrderId')}</dt>
-              <dd className="font-mono text-slate-700 dark:text-slate-200">{order.id}</dd>
-            </div>
-            {order.receiptNumber && (
-              <div>
-                <dt className="font-medium text-slate-500 dark:text-slate-400">{t('receiptReceiptNo')}</dt>
-                <dd className="font-semibold text-slate-800 dark:text-slate-100">{order.receiptNumber}</dd>
-              </div>
-            )}
-            <div>
-              <dt className="font-medium text-slate-500 dark:text-slate-400">{t('receiptCreatedBy')}</dt>
-              <dd className="text-slate-700 dark:text-slate-200">{order.creatorName ?? '—'}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-slate-500 dark:text-slate-400">{t('receiptTaskCustomer')}</dt>
-              <dd className="text-slate-700 dark:text-slate-200">{customerDisplayName(order)}</dd>
-            </div>
-            {order.clientName && (
-              <div>
-                <dt className="font-medium text-slate-500 dark:text-slate-400">{t('receiptClientName')}</dt>
-                <dd className="text-slate-700 dark:text-slate-200">
-                  {order.clientName}
-                  {order.clientPhone ? ` · ${order.clientPhone}` : ''}
-                </dd>
-              </div>
-            )}
-            {order.taskTitle && (
-              <div className="sm:col-span-2">
-                <dt className="font-medium text-slate-500 dark:text-slate-400">{t('linkedTask')}</dt>
-                <dd className="text-slate-700 dark:text-slate-200">{order.taskTitle}</dd>
-              </div>
-            )}
-            {order.amountPaid != null && (
-              <div>
-                <dt className="font-medium text-slate-500 dark:text-slate-400">{t('receiptAmountPaid')}</dt>
-                <dd className="tabular-nums text-emerald-700 dark:text-emerald-400">{formatIls(order.amountPaid)}</dd>
-              </div>
-            )}
-            {order.balanceDue != null && (
-              <div>
-                <dt className="font-medium text-slate-500 dark:text-slate-400">{t('receiptBalanceDue')}</dt>
-                <dd className="tabular-nums text-amber-700 dark:text-amber-400">{formatIls(order.balanceDue)}</dd>
-              </div>
-            )}
-            {order.paymentDueAt && (
-              <div>
-                <dt className="font-medium text-slate-500 dark:text-slate-400">{t('receiptPaymentDueDate')}</dt>
-                <dd className="text-slate-700 dark:text-slate-200">{order.paymentDueAt}</dd>
-              </div>
-            )}
-          </dl>
+    </div>
+  );
+};
 
-          {order.paymentNotes && (
-            <p className="rounded-lg border border-slate-100 bg-slate-50/80 px-2 py-1.5 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
-              {order.paymentNotes}
-            </p>
+const ReceiptDetailModal: React.FC<{
+  order: ApiOrder;
+  payHistory: ApiOrderPayment[];
+  payHistoryLoading: boolean;
+  onClose: () => void;
+  onRefreshHistory: () => void;
+  onRefetchOrders: () => void;
+  canEditPayment: boolean;
+  addOrderPayment: ReturnType<typeof useOrders>['addOrderPayment'];
+  updateReceiptMeta: ReturnType<typeof useOrders>['updateReceiptMeta'];
+}> = ({
+  order,
+  payHistory,
+  payHistoryLoading,
+  onClose,
+  onRefreshHistory,
+  onRefetchOrders,
+  canEditPayment,
+  addOrderPayment,
+  updateReceiptMeta,
+}) => {
+  const { t } = useApp();
+  const [buyerName, setBuyerName] = useState(order.customerReference ?? '');
+  const [addAmt, setAddAmt] = useState('');
+  const [addPaidAt, setAddPaidAt] = useState(() => new Date().toISOString().slice(0, 16));
+  const [addNote, setAddNote] = useState('');
+  const [savingBuyer, setSavingBuyer] = useState(false);
+  const [savingPay, setSavingPay] = useState(false);
+  const [formErr, setFormErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setBuyerName(order.customerReference ?? '');
+  }, [order.id, order.customerReference, order.updatedAt]);
+
+  const totalLabel = order.totalAmount != null ? formatIls(order.totalAmount) : '—';
+  const categories = useMemo(() => uniqueCategories(order.items), [order.items]);
+  const pricedLines = useMemo(
+    () =>
+      order.items
+        .map((it, i) => ({ it, i, line: it.lineTotal }))
+        .filter((x) => x.line != null && Number.isFinite(x.line)),
+    [order.items],
+  );
+
+  const saveBuyer = async () => {
+    setSavingBuyer(true);
+    setFormErr(null);
+    try {
+      const next = await updateReceiptMeta(order.id, { customer_reference: buyerName.trim() || null });
+      if (next) onRefetchOrders();
+    } catch (e) {
+      setFormErr(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setSavingBuyer(false);
+    }
+  };
+
+  const submitAddPayment = async () => {
+    if (order.totalAmount == null) return;
+    const parsed = parseFloat(addAmt.replace(',', '.'));
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setFormErr(t('receiptPaymentInvalidAmount'));
+      return;
+    }
+    setSavingPay(true);
+    setFormErr(null);
+    try {
+      const paidIso = new Date(addPaidAt).toISOString();
+      const updated = await addOrderPayment(order.id, {
+        amount: Math.round(parsed * 100) / 100,
+        paid_at: paidIso,
+        note: addNote.trim() || null,
+      });
+      if (updated) onRefetchOrders();
+      setAddAmt('');
+      onRefreshHistory();
+    } catch (e) {
+      setFormErr(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setSavingPay(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} aria-hidden />
+      <div className="relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-800">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+              {order.receiptNumber ?? t('receiptDetailModalTitle')}
+            </h2>
+            {order.paymentStatus && (
+              <span className={`mt-2 inline-block rounded-full px-2 py-px text-[10px] font-bold ${paymentBadgeClass(order.paymentStatus)}`}>
+                {order.paymentStatus === 'paid'
+                  ? t('receiptStatusPaid')
+                  : order.paymentStatus === 'partial'
+                    ? t('receiptStatusPartial')
+                    : order.paymentStatus === 'unpaid'
+                      ? t('receiptStatusUnpaid')
+                      : order.paymentStatus}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-3 text-sm">
+          <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+            <div>
+              <p className="text-slate-500">{t('receiptOrderId')}</p>
+              <p className="font-mono text-slate-800 dark:text-slate-100">{order.id}</p>
+            </div>
+            <div>
+              <p className="text-slate-500">{t('receiptCreatedBy')}</p>
+              <p>{order.creatorName ?? '—'}</p>
+            </div>
+          </div>
+
+          {canEditPayment && (
+            <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-600">
+              <label className="text-[11px] font-medium text-slate-600 dark:text-slate-400">{t('receiptBuyerName')}</label>
+              <div className="mt-1 flex gap-2">
+                <input
+                  value={buyerName}
+                  onChange={(e) => setBuyerName(e.target.value)}
+                  className="flex-1 rounded border border-slate-200 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                  placeholder={t('receiptBuyerNamePlaceholder')}
+                />
+                <button
+                  type="button"
+                  disabled={savingBuyer}
+                  onClick={() => void saveBuyer()}
+                  className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-200 dark:text-slate-900"
+                >
+                  {savingBuyer ? '…' : t('saveChanges')}
+                </button>
+              </div>
+            </div>
           )}
 
-          {canEditPayment && order.status === 'completed' && (
-            <div className="rounded-lg border border-indigo-200/80 bg-indigo-50/40 p-3 dark:border-indigo-900/50 dark:bg-indigo-950/25">
-              <p className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">{t('receiptPaymentEditHint')}</p>
-              <label className="mt-2 block text-[11px] text-slate-600 dark:text-slate-400">{t('receiptAmountPaid')}</label>
+          <div className="flex justify-between border-t border-slate-100 pt-3 dark:border-slate-700">
+            <span className="font-medium">{t('salesReceiptTotal')}</span>
+            <span className="font-bold text-indigo-600 dark:text-indigo-400">{totalLabel}</span>
+          </div>
+          {order.amountPaid != null && (
+            <div className="flex justify-between text-sm">
+              <span>{t('receiptAmountPaid')}</span>
+              <span className="text-emerald-600 dark:text-emerald-400 tabular-nums">{formatIls(order.amountPaid)}</span>
+            </div>
+          )}
+          {order.balanceDue != null && (
+            <div className="flex justify-between text-sm">
+              <span>{t('receiptBalanceDue')}</span>
+              <span className="text-orange-600 dark:text-orange-300 tabular-nums">{formatIls(order.balanceDue)}</span>
+            </div>
+          )}
+
+          {canEditPayment && (order.balanceDue ?? 0) > 0.009 && (
+            <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 dark:border-indigo-900/50 dark:bg-indigo-950/30">
+              <p className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">{t('receiptAddPayment')}</p>
+              <label className="mt-2 block text-[11px] text-slate-600">{t('receiptAddPaymentAmount')}</label>
               <input
-                type="text"
+                value={addAmt}
+                onChange={(e) => setAddAmt(e.target.value)}
+                className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900"
                 inputMode="decimal"
-                value={payAmount}
-                onChange={(e) => setPayAmount(e.target.value)}
-                className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
               />
-              <label className="mt-2 block text-[11px] text-slate-600 dark:text-slate-400">{t('receiptPaymentDueDate')}</label>
+              <label className="mt-2 block text-[11px] text-slate-600">{t('receiptPaymentDateTime')}</label>
               <input
-                type="date"
-                value={payDue}
-                onChange={(e) => setPayDue(e.target.value)}
-                className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                type="datetime-local"
+                value={addPaidAt}
+                onChange={(e) => setAddPaidAt(e.target.value)}
+                className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900"
               />
-              <label className="mt-2 block text-[11px] text-slate-600 dark:text-slate-400">{t('salesPaymentScheduleNotes')}</label>
+              <label className="mt-2 block text-[11px] text-slate-600">{t('salesPaymentScheduleNotes')}</label>
               <textarea
-                value={payNotes}
-                onChange={(e) => setPayNotes(e.target.value)}
+                value={addNote}
+                onChange={(e) => setAddNote(e.target.value)}
                 rows={2}
-                className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                className="mt-0.5 w-full rounded border border-slate-200 px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900"
               />
-              {payErr && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{payErr}</p>}
+              {formErr && <p className="mt-2 text-xs text-red-600">{formErr}</p>}
               <button
                 type="button"
-                disabled={paySaving}
-                onClick={() => void savePayment()}
+                disabled={savingPay}
+                onClick={() => void submitAddPayment()}
                 className="mt-2 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
               >
-                {paySaving ? t('receiptPaymentUpdating') : t('receiptSavePayment')}
+                {savingPay ? '…' : t('receiptAddPaymentSubmit')}
               </button>
             </div>
           )}
 
-          {order.customerReference && (
-            <p className="text-xs text-slate-600 dark:text-slate-300">
-              {t('customerReference')}: {order.customerReference}
+          <div>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{t('receiptPaymentHistory')}</h3>
+            {payHistoryLoading ? (
+              <p className="text-sm text-slate-500">{t('loading')}</p>
+            ) : payHistory.length === 0 ? (
+              <p className="text-sm text-slate-500">{t('receiptNoPayments')}</p>
+            ) : (
+              <ul className="max-h-48 space-y-2 overflow-y-auto text-xs">
+                {payHistory.map((p) => (
+                  <li key={p.id} className="flex justify-between gap-2 rounded border border-slate-100 px-2 py-1.5 dark:border-slate-600">
+                    <div>
+                      <p className="font-medium text-emerald-700 dark:text-emerald-300 tabular-nums">+{formatIls(p.amount)}</p>
+                      <p className="text-slate-500">
+                        {new Date(p.paidAt).toLocaleString()} · {p.recordedByName ?? '—'}
+                      </p>
+                      {p.note && <p className="text-slate-500">{p.note}</p>}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {categories.length > 0 && (
+            <p className="text-xs text-slate-600">
+              <span className="font-semibold">{t('receiptCategoriesLabel')}: </span>
+              {categories.join(' · ')}
             </p>
           )}
 
-          {categories.length > 0 && (
-            <div>
-              <p className="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-400">{t('receiptCategoriesLabel')}</p>
-              <p className="text-sm text-slate-800 dark:text-slate-200">{categories.join(' · ')}</p>
-            </div>
-          )}
-
           <div>
-            <p className="mb-2 text-xs font-semibold text-slate-600 dark:text-slate-400">{t('orderItems')}</p>
+            <h3 className="mb-2 text-xs font-semibold text-slate-500">{t('orderItems')}</h3>
             <ul className="space-y-2">
               {order.items.map((it) => (
-                <li
-                  key={it.id}
-                  className="flex flex-col gap-0.5 rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/40"
-                >
-                  <div className="flex justify-between gap-2 text-slate-700 dark:text-slate-300">
-                    <span className="min-w-0">
-                      {it.categoryName && <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400">{it.categoryName} · </span>}
-                      {it.profileName} · {it.colorName} · {it.quantityM} m
-                    </span>
-                    {it.lineTotal != null && <span className="shrink-0 tabular-nums font-medium">{formatIls(it.lineTotal)}</span>}
-                  </div>
-                  {it.unitPricePerM != null && (
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      {t('salesPricePerM')}: {formatIls(it.unitPricePerM)}
-                    </p>
-                  )}
+                <li key={it.id} className="rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900/40">
+                  {it.profileName} · {it.colorName} · {it.quantity} {t('unitsShort')}
+                  {it.lineTotal != null && <span className="float-end font-medium tabular-nums">{formatIls(it.lineTotal)}</span>}
                 </li>
               ))}
             </ul>
           </div>
 
-          {pricedLines.length > 1 && (
-            <div className="rounded-lg border border-indigo-200/80 bg-indigo-50/50 px-3 py-2 dark:border-indigo-900/50 dark:bg-indigo-950/20">
-              <p className="mb-1 text-xs font-semibold text-indigo-900 dark:text-indigo-200">{t('orderPriceCalculation')}</p>
-              <ul className="space-y-1 text-sm text-slate-800 dark:text-slate-200">
-                {pricedLines.map((x, j) => (
-                  <li key={x.it.id} className="flex flex-wrap items-center gap-1">
-                    {j > 0 && <span className="font-semibold text-indigo-600 dark:text-indigo-400">+</span>}
-                    <span className="tabular-nums">{formatIls(x.line as number)}</span>
-                    <span className="text-xs text-slate-500">
-                      ({x.it.profileName}/{x.it.colorName})
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              {Math.abs(sumFromLines - (order.totalAmount ?? 0)) < 0.02 && order.totalAmount != null && (
-                <p className="mt-2 border-t border-indigo-200/60 pt-2 text-sm font-bold text-indigo-700 dark:text-indigo-300">
-                  = {formatIls(order.totalAmount)}
-                </p>
-              )}
-            </div>
+          {pricedLines.length > 1 && order.totalAmount != null && (
+            <p className="text-xs text-indigo-800 dark:text-indigo-200">
+              {t('orderPriceCalculation')}: {formatIls(order.totalAmount)}
+            </p>
           )}
-
-          <div className="flex items-center justify-between border-t border-slate-200 pt-2 dark:border-slate-600">
-            <span className="font-semibold text-slate-800 dark:text-slate-100">{t('salesReceiptTotal')}</span>
-            <span className="text-lg font-bold tabular-nums text-indigo-600 dark:text-indigo-400">{totalLabel}</span>
-          </div>
         </div>
-      )}
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-6 w-full rounded-lg border border-slate-200 py-2.5 text-sm font-medium text-slate-700 dark:border-slate-600 dark:text-slate-200"
+        >
+          {t('close')}
+        </button>
+      </div>
     </div>
   );
 };

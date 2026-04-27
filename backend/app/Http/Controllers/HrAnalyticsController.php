@@ -23,7 +23,9 @@ class HrAnalyticsController extends Controller
         $monthEnd = $now->copy()->endOfMonth();
         $yearStart = $now->copy()->startOfYear();
 
-        $pendingLeave = LeaveRequest::where('status', 'pending')->count();
+        $pendingLeave = LeaveRequest::where('status', 'pending')
+            ->where('workflow_step', 'hr')
+            ->count();
         $pendingSalary = SalaryIncreaseRequest::where('status', 'pending')->count();
 
         $approvedLeaveThisMonth = LeaveRequest::query()

@@ -92,7 +92,7 @@ class StorehouseController extends Controller
         $data = $request->validate([
             'profile_id' => 'required|exists:profiles,id',
             'color_code' => 'required|exists:colors,color_code',
-            'quantity_m' => 'required|numeric|min:0',
+            'quantity' => 'required|integer|min:0',
         ]);
 
         $dup = Inventory::where('profile_id', $data['profile_id'])->where('color_code', $data['color_code'])->first();
@@ -103,7 +103,7 @@ class StorehouseController extends Controller
         $inv = Inventory::create([
             'profile_id' => $data['profile_id'],
             'color_code' => $data['color_code'],
-            'quantity_m' => $data['quantity_m'],
+            'quantity' => $data['quantity'],
         ]);
         $inv->load(['profile.category', 'color']);
 
@@ -115,7 +115,7 @@ class StorehouseController extends Controller
         $data = $request->validate([
             'profile_id' => 'required|exists:profiles,id',
             'color_code' => 'required|exists:colors,color_code',
-            'quantity_m' => 'required|numeric|min:0',
+            'quantity' => 'required|integer|min:0',
         ]);
 
         $conflict = Inventory::query()
@@ -130,7 +130,7 @@ class StorehouseController extends Controller
 
         $inventory->profile_id = $data['profile_id'];
         $inventory->color_code = $data['color_code'];
-        $inventory->quantity_m = $data['quantity_m'];
+        $inventory->quantity = $data['quantity'];
         $inventory->save();
         $inventory->load(['profile.category', 'color']);
 
@@ -160,8 +160,8 @@ class StorehouseController extends Controller
             'usage' => $i->profile?->usage,
             'colorCode' => $i->color_code,
             'colorName' => $i->color?->name,
-            'quantityM' => (float) $i->quantity_m,
-            'unitPricePerM' => InventoryPricing::unitPricePerM($i),
+            'quantity' => (int) $i->quantity,
+            'unitPrice' => InventoryPricing::unitPrice($i),
         ];
     }
 }

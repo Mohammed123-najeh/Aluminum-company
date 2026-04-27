@@ -46,7 +46,7 @@ export function useStorehouse(categoryCode?: string) {
   }, [fetch]);
 
   const createInventoryItem = useCallback(
-    async (payload: { profile_id: number; color_code: string; quantity_m: number }) => {
+    async (payload: { profile_id: number; color_code: string; quantity: number }) => {
       if (!token) return undefined;
       const created = await storehouseApi.inventoryCreate(payload, token);
       setInventory((prev) =>
@@ -58,7 +58,7 @@ export function useStorehouse(categoryCode?: string) {
   );
 
   const updateInventoryItem = useCallback(
-    async (id: number, payload: { profile_id: number; color_code: string; quantity_m: number }) => {
+    async (id: number, payload: { profile_id: number; color_code: string; quantity: number }) => {
       if (!token) return undefined;
       const updated = await storehouseApi.inventoryUpdate(id, payload, token);
       setInventory((prev) => prev.map((i) => (i.id === id ? updated : i)));

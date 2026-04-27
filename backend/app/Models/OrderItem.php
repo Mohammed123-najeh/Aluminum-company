@@ -11,17 +11,17 @@ class OrderItem extends Model
         'order_id',
         'profile_id',
         'color_code',
-        'quantity_m',
+        'quantity',
         'notes',
-        'unit_price_per_m',
+        'unit_price',
         'line_total',
     ];
 
     protected function casts(): array
     {
         return [
-            'quantity_m' => 'decimal:3',
-            'unit_price_per_m' => 'decimal:4',
+            'quantity' => 'integer',
+            'unit_price' => 'decimal:4',
             'line_total' => 'decimal:2',
         ];
     }

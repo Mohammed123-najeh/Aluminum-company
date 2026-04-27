@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
 class SalesTaskFulfillmentController extends Controller
 {
     /**
-     * Sales employees: inventory rows with suggested unit price (per meter).
+     * Sales users: inventory rows with suggested list price (per unit).
      */
     public function inventoryOffers(Request $request)
     {
@@ -42,8 +42,8 @@ class SalesTaskFulfillmentController extends Controller
                 'usage' => $inv->profile?->usage,
                 'colorCode' => $inv->color_code,
                 'colorName' => $inv->color?->name,
-                'quantityM' => (float) $inv->quantity_m,
-                'unitPricePerM' => InventoryPricing::unitPricePerM($inv),
+                'quantity' => (int) $inv->quantity,
+                'unitPrice' => InventoryPricing::unitPrice($inv),
             ];
         });
 
@@ -67,7 +67,7 @@ class SalesTaskFulfillmentController extends Controller
             'customer_reference' => 'nullable|string|max:255',
             'items' => 'required|array|min:1',
             'items.*.inventory_id' => 'required|exists:inventory,id',
-            'items.*.quantity_m' => 'required|numeric|min:0.001',
+            'items.*.quantity' => 'required|integer|min:1',
             'initial_amount_paid' => 'nullable|numeric|min:0',
             'payment_due_at' => 'nullable|date',
             'payment_notes' => 'nullable|string|max:2000',
@@ -129,17 +129,17 @@ class SalesTaskFulfillmentController extends Controller
 
             foreach ($data['items'] as $line) {
                 $inv = Inventory::query()->lockForUpdate()->findOrFail($line['inventory_id']);
-                $qty = (float) $line['quantity_m'];
-                if ($qty <= 0) {
+                $qty = (int) $line['quantity'];
+                if ($qty < 1) {
                     throw new HttpResponseException(response()->json(['message' => 'Invalid quantity'], 422));
                 }
-                if ((float) $inv->quantity_m + 0.0001 < $qty) {
+                if ((int) $inv->quantity < $qty) {
                     throw new HttpResponseException(response()->json([
                         'message' => 'Insufficient stock for '.$inv->profile?->name.' / '.$inv->color_code,
                     ], 422));
                 }
 
-                $unit = InventoryPricing::unitPricePerM($inv);
+                $unit = InventoryPricing::unitPrice($inv);
                 $lineTotal = round($unit * $qty, 2);
                 $grand += $lineTotal;
 
@@ -147,24 +147,21 @@ class SalesTaskFulfillmentController extends Controller
                     'order_id' => $order->id,
                     'profile_id' => $inv->profile_id,
                     'color_code' => $inv->color_code,
-                    'quantity_m' => $qty,
+                    'quantity' => $qty,
                     'notes' => null,
-                    'unit_price_per_m' => $unit,
+                    'unit_price' => $unit,
                     'line_total' => $lineTotal,
                 ]);
 
-                $inv->quantity_m = (float) $inv->quantity_m - $qty;
-                if ($inv->quantity_m < 0) {
-                    $inv->quantity_m = 0;
-                }
+                $inv->quantity = max(0, (int) $inv->quantity - $qty);
                 $inv->save();
 
                 $inv->load(['profile', 'color']);
                 $linesOut[] = [
                     'profileName' => $inv->profile?->name,
                     'colorName' => $inv->color?->name,
-                    'quantityM' => $qty,
-                    'unitPricePerM' => $unit,
+                    'quantity' => $qty,
+                    'unitPrice' => $unit,
                     'lineTotal' => $lineTotal,
                 ];
             }

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { LOW_STOCK_THRESHOLD_M } from '../../constants/inventory';
+import { LOW_STOCK_THRESHOLD_UNITS } from '../../constants/inventory';
 import { useApp } from '../../contexts/AppContext';
 import { useStorehouse } from '../../hooks/useStorehouse';
 import type { ApiInventoryItem, ApiProfile } from '../../services/api';
@@ -101,11 +101,22 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
   const displayList = useMemo(() => filtered.slice(start, start + PAGE_SIZE), [filtered, start]);
 
   const lowStockCount = useMemo(
-    () => inventory.filter((i) => i.quantityM <= LOW_STOCK_THRESHOLD_M).length,
+    () => inventory.filter((i) => i.quantity === 0 || i.quantity <= LOW_STOCK_THRESHOLD_UNITS).length,
     [inventory],
   );
 
-  const isLowStock = (i: ApiInventoryItem) => i.quantityM <= LOW_STOCK_THRESHOLD_M;
+  const isLowStock = (i: ApiInventoryItem) => i.quantity > 0 && i.quantity <= LOW_STOCK_THRESHOLD_UNITS;
+  const isOutOfStock = (i: ApiInventoryItem) => i.quantity === 0;
+  const rowStockClass = (i: ApiInventoryItem) => {
+    const b = 'border-b border-slate-100 last:border-0 dark:border-slate-700';
+    if (isOutOfStock(i)) {
+      return `bg-rose-100/90 dark:bg-rose-950/40 border-rose-300/90 dark:border-rose-800/50 ${b}`;
+    }
+    if (isLowStock(i)) {
+      return `bg-rose-50/80 border-2 border-rose-300/80 dark:bg-rose-950/20 dark:border-rose-800/60 ${b}`;
+    }
+    return b;
+  };
 
   const openAdd = () => {
     setEditItem(null);
@@ -123,7 +134,7 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
     setFormProfileId(item.profileId);
     setFormProfileName(item.profileName ?? '');
     setFormColorCode(item.colorCode);
-    setFormQty(String(item.quantityM));
+    setFormQty(String(item.quantity));
     setShowModal(true);
   };
 
@@ -145,7 +156,7 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
 
   const handleSaveModal = async (e: React.FormEvent) => {
     e.preventDefault();
-    const qty = parseFloat(formQty);
+    const qty = parseInt(formQty, 10);
     if (!Number.isFinite(qty) || qty < 0) return;
     if (formProfileId === '' || !formColorCode) return;
     const nameTrim = formProfileName.trim();
@@ -159,7 +170,7 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
     const payload = {
       profile_id: pid,
       color_code: formColorCode,
-      quantity_m: qty,
+      quantity: qty,
     };
     setSaving(true);
     try {
@@ -218,7 +229,7 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
         >
           {t('lowStockBanner')
             .replace('{count}', String(lowStockCount))
-            .replace('{threshold}', String(LOW_STOCK_THRESHOLD_M))}
+            .replace('{threshold}', String(LOW_STOCK_THRESHOLD_UNITS))}
         </div>
       )}
       <div className="flex flex-col gap-4 md:flex-row md:flex-wrap md:items-center md:justify-between">
@@ -315,7 +326,7 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
                     <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">{t('weightKgPerM')}</th>
                     <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">{t('usage')}</th>
                     <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">{t('color')}</th>
-                    <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">{t('salesPricePerM')}</th>
+                    <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">{t('salesPricePerUnit')}</th>
                     <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">{t('quantityInStock')}</th>
                     {canManage && (
                       <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">{t('actionsCol')}</th>
@@ -326,9 +337,20 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
                   {displayList.map((item) => (
                     <tr
                       key={item.id}
-                      className={`border-b border-slate-100 last:border-0 dark:border-slate-700 ${
-                        isLowStock(item) ? 'bg-amber-50/50 dark:bg-amber-950/20' : ''
-                      }`}
+                      role={canManage ? 'button' : undefined}
+                      tabIndex={canManage ? 0 : undefined}
+                      onClick={canManage ? () => openEdit(item) : undefined}
+                      onKeyDown={
+                        canManage
+                          ? (e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                openEdit(item);
+                              }
+                            }
+                          : undefined
+                      }
+                      className={`${rowStockClass(item)} ${canManage ? 'cursor-pointer transition hover:bg-slate-50/80 dark:hover:bg-slate-800/60' : ''}`}
                     >
                       <td className="whitespace-nowrap px-4 py-3 text-slate-700 dark:text-slate-300">{item.categoryName ?? '—'}</td>
                       <td className="px-4 py-3 text-slate-900 dark:text-slate-100">
@@ -348,22 +370,30 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
                         {item.colorName} ({item.colorCode})
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 tabular-nums text-slate-700 dark:text-slate-300">
-                        {item.unitPricePerM != null ? formatIls(item.unitPricePerM) : '—'}
+                        {item.unitPrice != null ? formatIls(item.unitPrice) : '—'}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900 dark:text-slate-100">{item.quantityM} m</td>
+                      <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900 dark:text-slate-100">
+                        {item.quantity} {t('unitsShort')}
+                      </td>
                       {canManage && (
                         <td className="whitespace-nowrap px-4 py-3">
                           <div className="flex flex-wrap gap-1">
                             <button
                               type="button"
-                              onClick={() => openEdit(item)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEdit(item);
+                              }}
                               className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
                             >
                               {t('edit')}
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleDelete(item)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleDelete(item);
+                              }}
                               disabled={deletingId === item.id}
                               className="rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/30"
                             >
@@ -496,10 +526,10 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">{t('quantityM')}</label>
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">{t('quantityUnits')}</label>
                 <input
                   type="number"
-                  step="0.001"
+                  step="1"
                   min="0"
                   required
                   value={formQty}

@@ -65,6 +65,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/orders/{order}', [OrderController::class, 'show']);
     Route::put('/orders/{order}', [OrderController::class, 'update']);
     Route::patch('/orders/{order}/payment', [OrderController::class, 'updatePayment']);
+    Route::get('/orders/{order}/payments', [OrderController::class, 'listPayments']);
+    Route::post('/orders/{order}/payments', [OrderController::class, 'addPayment']);
+    Route::patch('/orders/{order}/receipt-meta', [OrderController::class, 'updateReceiptMeta']);
 
     Route::get('/users', [UserController::class, 'index']);
     Route::post('/users', [UserController::class, 'store']);
@@ -92,7 +95,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/leave-requests/mine', [LeaveRequestController::class, 'mine']);
     Route::get('/leave-requests', [LeaveRequestController::class, 'indexHr']);
+    Route::get('/leave-requests/supervisor-queue', [LeaveRequestController::class, 'indexSupervisor']);
     Route::post('/leave-requests', [LeaveRequestController::class, 'store']);
+    Route::patch('/leave-requests/{leaveRequest}/supervisor-decide', [LeaveRequestController::class, 'supervisorDecide']);
     Route::patch('/leave-requests/{leaveRequest}/decide', [LeaveRequestController::class, 'decide']);
     Route::patch('/leave-requests/{leaveRequest}/cancel', [LeaveRequestController::class, 'cancel']);
 

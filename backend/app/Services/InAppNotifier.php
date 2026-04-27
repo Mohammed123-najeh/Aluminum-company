@@ -62,6 +62,20 @@ class InAppNotifier
         ]);
     }
 
+    /** Supervisor cancelled the task — notify each assignee (in-app + optional Message row). */
+    public static function taskCancelledBySupervisor(User $assignee, Task $task): void
+    {
+        UserNotification::create([
+            'user_id' => $assignee->id,
+            'type' => UserNotification::TYPE_TASK_CANCELLED,
+            'title' => 'Task cancelled by supervisor',
+            'body' => 'Task #'.$task->id.' — “'.$task->title.'”. You do not need to work on it.',
+            'data' => [
+                'taskId' => (string) $task->id,
+            ],
+        ]);
+    }
+
     public static function welcomeNewUser(User $user): void
     {
         UserNotification::create([
@@ -73,7 +87,31 @@ class InAppNotifier
         ]);
     }
 
+    /** Employee submitted leave: notify their supervisor (first step). */
     public static function leaveRequestSubmitted(LeaveRequest $leave): void
+    {
+        $leave->loadMissing('user:id,name');
+        $name = $leave->user?->name ?? 'Employee';
+        $typeLabel = $leave->type === 'holiday' ? 'Annual leave' : 'Sick leave';
+        if ($leave->supervisor_id) {
+            $sup = User::query()->find($leave->supervisor_id);
+            if ($sup) {
+                UserNotification::create([
+                    'user_id' => $sup->id,
+                    'type' => UserNotification::TYPE_HR_LEAVE_PENDING,
+                    'title' => 'Leave request from '.$name,
+                    'body' => 'New '.$typeLabel.' request — '.$leave->days_count.' day(s) — your approval is needed.',
+                    'data' => [
+                        'leaveRequestId' => (string) $leave->id,
+                        'employeeId' => (string) $leave->user_id,
+                    ],
+                ]);
+            }
+        }
+    }
+
+    /** Supervisor approved; HR final step — notify HR team. */
+    public static function leaveRequestAwaitingHr(LeaveRequest $leave): void
     {
         $leave->loadMissing('user:id,name');
         $name = $leave->user?->name ?? 'Employee';
@@ -82,8 +120,8 @@ class InAppNotifier
             UserNotification::create([
                 'user_id' => $hr->id,
                 'type' => UserNotification::TYPE_HR_LEAVE_PENDING,
-                'title' => 'New '.$typeLabel.' request',
-                'body' => $name.' requested '.$leave->days_count.' day(s).',
+                'title' => 'HR: '.$typeLabel.' request (supervisor approved)',
+                'body' => $name.' — '.$leave->days_count.' day(s) — please decide.',
                 'data' => [
                     'leaveRequestId' => (string) $leave->id,
                     'employeeId' => (string) $leave->user_id,

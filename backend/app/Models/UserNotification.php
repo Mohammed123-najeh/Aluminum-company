@@ -13,6 +13,8 @@ class UserNotification extends Model
 
     public const TYPE_TASK_STATUS = 'task_status';
 
+    public const TYPE_TASK_CANCELLED = 'task_cancelled';
+
     public const TYPE_WELCOME = 'welcome';
 
     public const TYPE_HR_LEAVE_PENDING = 'hr_leave_pending';

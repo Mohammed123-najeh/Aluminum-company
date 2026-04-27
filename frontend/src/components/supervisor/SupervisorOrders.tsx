@@ -65,7 +65,7 @@ export const SupervisorOrders: React.FC<Props> = ({ orders, loading, error }) =>
               <ul className="mt-3 space-y-1 text-sm text-slate-600 dark:text-slate-400">
                 {order.items.slice(0, 3).map((item) => (
                   <li key={item.id}>
-                    {item.profileCode} {item.profileName} / {item.colorName} × {item.quantityM} m
+                    {item.profileCode} {item.profileName} / {item.colorName} × {item.quantity} {t('unitsShort')}
                   </li>
                 ))}
                 {order.items.length > 3 && (
@@ -121,7 +121,7 @@ export const SupervisorOrders: React.FC<Props> = ({ orders, loading, error }) =>
                   </span>
                   <span className="text-slate-600 dark:text-slate-400"> · {item.colorName}</span>
                   <span className="block text-slate-600 dark:text-slate-400">
-                    {item.quantityM} m
+                    {item.quantity} {t('unitsShort')}
                   </span>
                   {item.notes && <p className="mt-1 text-xs text-slate-500">{item.notes}</p>}
                 </li>

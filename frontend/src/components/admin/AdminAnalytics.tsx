@@ -256,7 +256,7 @@ export const AdminAnalytics: React.FC = () => {
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-slate-600 dark:text-slate-300">{t('adminInventoryTotalM')}</span>
-              <span className="font-semibold tabular-nums">{data.storehouse.totalQuantityM}</span>
+              <span className="font-semibold tabular-nums">{data.storehouse.totalQuantityUnits}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-slate-600 dark:text-slate-300">{t('adminAiConversations')}</span>

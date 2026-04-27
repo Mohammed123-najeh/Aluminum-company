@@ -4,9 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\OrderPayment;
 use App\Models\Profile;
 use App\Models\Task;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class OrderController extends Controller
 {
@@ -67,7 +71,7 @@ class OrderController extends Controller
             'items' => 'required|array|min:1',
             'items.*.profile_id' => 'required|exists:profiles,id',
             'items.*.color_code' => 'required|exists:colors,color_code',
-            'items.*.quantity_m' => 'required|numeric|min:0.001',
+            'items.*.quantity' => 'required|integer|min:1',
             'items.*.notes' => 'nullable|string|max:500',
             'task_id' => 'nullable|exists:tasks,id',
         ]);
@@ -107,7 +111,7 @@ class OrderController extends Controller
                         'order_id' => $existingOrder->id,
                         'profile_id' => $profile->id,
                         'color_code' => $item['color_code'],
-                        'quantity_m' => $item['quantity_m'],
+                        'quantity' => $item['quantity'],
                         'notes' => $item['notes'] ?? null,
                     ]);
                 }
@@ -133,7 +137,7 @@ class OrderController extends Controller
                 'order_id' => $order->id,
                 'profile_id' => $profile->id,
                 'color_code' => $item['color_code'],
-                'quantity_m' => $item['quantity_m'],
+                'quantity' => $item['quantity'],
                 'notes' => $item['notes'] ?? null,
             ]);
         }
@@ -185,7 +189,7 @@ class OrderController extends Controller
             'items' => 'sometimes|array|min:0',
             'items.*.profile_id' => 'required_with:items|exists:profiles,id',
             'items.*.color_code' => 'required_with:items|exists:colors,color_code',
-            'items.*.quantity_m' => 'required_with:items|numeric|min:0.001',
+            'items.*.quantity' => 'required_with:items|integer|min:1',
             'items.*.notes' => 'nullable|string|max:500',
         ]);
 
@@ -202,7 +206,7 @@ class OrderController extends Controller
                     'order_id' => $order->id,
                     'profile_id' => $item['profile_id'],
                     'color_code' => $item['color_code'],
-                    'quantity_m' => $item['quantity_m'],
+                    'quantity' => $item['quantity'],
                     'notes' => $item['notes'] ?? null,
                 ]);
             }
@@ -231,6 +235,7 @@ class OrderController extends Controller
             'payment_notes' => 'nullable|string|max:2000',
         ]);
 
+        $prevPaid = (float) ($order->amount_paid ?? 0);
         $order->amount_paid = round((float) $data['amount_paid'], 2);
         if (array_key_exists('payment_due_at', $data)) {
             $order->payment_due_at = $data['payment_due_at'] ?? null;
@@ -239,9 +244,122 @@ class OrderController extends Controller
             $order->payment_notes = $data['payment_notes'] ?? null;
         }
         $order->save();
+
+        $newPaid = (float) ($order->amount_paid ?? 0);
+        $diff = round($newPaid - $prevPaid, 2);
+        if (Schema::hasTable('order_payments') && $diff > 0.009) {
+            OrderPayment::create([
+                'order_id' => $order->id,
+                'amount' => $diff,
+                'paid_at' => now(),
+                'recorded_by' => $user->id,
+                'note' => 'Adjusted via legacy update payment',
+            ]);
+        }
+
         $order->load(['items.profile.category', 'items.color', 'creator:id,name', 'supervisor:id,name', 'client:id,name,phone,email', 'task:id,title,order_id,customer_name,client_id']);
 
         return response()->json($this->orderToArray($order->fresh()));
+    }
+
+    public function listPayments(Request $request, Order $order)
+    {
+        $user = $request->user();
+        if (! $this->userCanViewOrder($user, $order)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        if (! Schema::hasTable('order_payments')) {
+            return response()->json([]);
+        }
+        $rows = OrderPayment::query()
+            ->where('order_id', $order->id)
+            ->orderBy('paid_at')
+            ->orderBy('id')
+            ->get();
+
+        return response()->json($rows->map(fn ($p) => $p->toApiArray())->values());
+    }
+
+    public function addPayment(Request $request, Order $order)
+    {
+        $user = $request->user();
+        $can = $order->creator_id == $user->id
+            || ($user->role === 'supervisor' && (int) $order->supervisor_id === (int) $user->id)
+            || $user->role === 'admin';
+        if (! $can) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        if ($order->status !== 'completed' || ! Schema::hasTable('order_payments')) {
+            return response()->json(['message' => 'Payment entries are only for completed orders'], 400);
+        }
+
+        $data = $request->validate([
+            'amount' => 'required|numeric|min:0.01',
+            'paid_at' => 'nullable|date',
+            'note' => 'nullable|string|max:2000',
+        ]);
+
+        $total = $order->total_amount !== null ? (float) $order->total_amount : 0.0;
+        $current = (float) ($order->amount_paid ?? 0);
+        $remaining = max(0, round($total - $current, 2));
+        $requested = round((float) $data['amount'], 2);
+        $add = min($requested, $remaining);
+        if ($add < 0.01) {
+            return response()->json(['message' => 'Amount exceeds balance due or no balance remaining.'], 422);
+        }
+
+        $paidAt = isset($data['paid_at']) ? \Carbon\Carbon::parse($data['paid_at']) : now();
+
+        return DB::transaction(function () use ($order, $add, $paidAt, $data, $user) {
+            OrderPayment::create([
+                'order_id' => $order->id,
+                'amount' => $add,
+                'paid_at' => $paidAt,
+                'recorded_by' => $user->id,
+                'note' => $data['note'] ?? null,
+            ]);
+            $order->amount_paid = round((float) ($order->amount_paid ?? 0) + $add, 2);
+            $order->save();
+            $order->load(['items.profile.category', 'items.color', 'creator:id,name', 'supervisor:id,name', 'client:id,name,phone,email', 'task:id,title,order_id,customer_name,client_id']);
+
+            return response()->json($this->orderToArray($order->fresh()));
+        });
+    }
+
+    public function updateReceiptMeta(Request $request, Order $order)
+    {
+        $user = $request->user();
+        $can = $order->creator_id == $user->id
+            || ($user->role === 'supervisor' && (int) $order->supervisor_id === (int) $user->id)
+            || $user->role === 'admin';
+        if (! $can) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        if ($order->status !== 'completed' || $order->receipt_number === null) {
+            return response()->json(['message' => 'Only issued receipts can be edited here'], 400);
+        }
+
+        $data = $request->validate([
+            'customer_reference' => 'nullable|string|max:255',
+        ]);
+
+        $order->customer_reference = $data['customer_reference'] ?? null;
+        $order->save();
+        $order->load(['items.profile.category', 'items.color', 'creator:id,name', 'supervisor:id,name', 'client:id,name,phone,email', 'task:id,title,order_id,customer_name,client_id']);
+
+        return response()->json($this->orderToArray($order->fresh()));
+    }
+
+    private function userCanViewOrder(User $user, Order $order): bool
+    {
+        if ($user->role === 'admin') {
+            return true;
+        }
+        if ($user->role === 'supervisor') {
+            return (int) $order->supervisor_id === (int) $user->id || (int) $order->creator_id === (int) $user->id;
+        }
+
+        return (int) $order->creator_id === (int) $user->id;
     }
 
     private function orderToArray(Order $order): array
@@ -282,9 +400,9 @@ class OrderController extends Controller
                 'categoryName' => $i->profile?->category?->category_name,
                 'colorCode' => $i->color_code,
                 'colorName' => $i->color?->name,
-                'quantityM' => (float) $i->quantity_m,
+                'quantity' => (int) $i->quantity,
                 'notes' => $i->notes,
-                'unitPricePerM' => $i->unit_price_per_m !== null ? (float) $i->unit_price_per_m : null,
+                'unitPrice' => $i->unit_price !== null ? (float) $i->unit_price : null,
                 'lineTotal' => $i->line_total !== null ? (float) $i->line_total : null,
             ])->values()->toArray(),
             'createdAt' => $order->created_at->toISOString(),

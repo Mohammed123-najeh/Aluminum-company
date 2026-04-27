@@ -7,7 +7,7 @@ import { formatIls } from '../../utils/currency';
 export type CartLine = {
   inventoryId: number;
   offer: ApiInventoryOffer;
-  quantityM: number;
+  quantity: number;
 };
 
 export type ReceiptCustomerInfo = {
@@ -42,10 +42,6 @@ function norm(s: string) {
   return s.trim().toLowerCase();
 }
 
-function round3(n: number) {
-  return Math.round(n * 1000) / 1000;
-}
-
 function round2(n: number) {
   return Math.round(n * 100) / 100;
 }
@@ -56,8 +52,8 @@ function normalizeInventoryOffer(o: ApiInventoryOffer): ApiInventoryOffer {
     ...o,
     inventoryId: Number(o.inventoryId) || 0,
     profileId: Number(o.profileId) || 0,
-    quantityM: Math.max(0, Number(o.quantityM) || 0),
-    unitPricePerM: Number(o.unitPricePerM) || 0,
+    quantity: Math.max(0, Math.floor(Number(o.quantity) || 0)),
+    unitPrice: Number(o.unitPrice) || 0,
   };
 }
 
@@ -87,7 +83,7 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
   const [receipt, setReceipt] = useState<ApiFulfillTaskResponse | null>(null);
   const [employeeSuccess, setEmployeeSuccess] = useState(false);
   const [selectedOffer, setSelectedOffer] = useState<ApiInventoryOffer | null>(null);
-  const [customQtyM, setCustomQtyM] = useState<string>('1');
+  const [customQty, setCustomQty] = useState<string>('1');
   const [showFulfillConfirm, setShowFulfillConfirm] = useState(false);
   const [showPaymentStep, setShowPaymentStep] = useState(false);
   const [amountPaidNow, setAmountPaidNow] = useState('');
@@ -157,22 +153,23 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
   }, [offers, search, categoryFilter, colorFilter]);
 
   const cartQtyFor = useCallback(
-    (id: number) => cart.filter((l) => l.inventoryId === id).reduce((a, l) => a + l.quantityM, 0),
+    (id: number) => cart.filter((l) => l.inventoryId === id).reduce((a, l) => a + l.quantity, 0),
     [cart],
   );
 
   const addQty = useCallback(
     (offer: ApiInventoryOffer, qty: number) => {
-      if (qty <= 0) return;
+      const q = Math.floor(qty);
+      if (q < 1) return;
       const current = cartQtyFor(offer.inventoryId);
-      if (current + qty > offer.quantityM + 0.0001) return;
+      if (current + q > offer.quantity) return;
       setCart((prev) => {
         const idx = prev.findIndex((l) => l.inventoryId === offer.inventoryId);
         if (idx === -1) {
-          return [...prev, { inventoryId: offer.inventoryId, offer, quantityM: qty }];
+          return [...prev, { inventoryId: offer.inventoryId, offer, quantity: q }];
         }
         const next = [...prev];
-        next[idx] = { ...next[idx], quantityM: round3(next[idx].quantityM + qty) };
+        next[idx] = { ...next[idx], quantity: next[idx].quantity + q };
         return next;
       });
     },
@@ -183,9 +180,9 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
     setCart((prev) => {
       const line = prev.find((l) => l.inventoryId === inventoryId);
       if (!line) return prev;
-      if (qty <= 0) return prev.filter((l) => l.inventoryId !== inventoryId);
-      const q = Math.min(qty, line.offer.quantityM);
-      return prev.map((l) => (l.inventoryId === inventoryId ? { ...l, quantityM: round3(q) } : l));
+      const q = Math.min(Math.max(0, Math.floor(qty)), line.offer.quantity);
+      if (q <= 0) return prev.filter((l) => l.inventoryId !== inventoryId);
+      return prev.map((l) => (l.inventoryId === inventoryId ? { ...l, quantity: q } : l));
     });
   }, []);
 
@@ -195,16 +192,16 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
 
   const addCustomQty = useCallback(() => {
     if (!selectedOffer) return;
-    const avail = Math.max(0, selectedOffer.quantityM - cartQtyFor(selectedOffer.inventoryId));
-    const q = parseFloat(customQtyM.replace(',', '.'));
-    if (!Number.isFinite(q) || q <= 0) return;
-    const useQty = round3(Math.min(q, avail));
-    if (useQty < 0.001) return;
+    const avail = Math.max(0, selectedOffer.quantity - cartQtyFor(selectedOffer.inventoryId));
+    const q = parseInt(customQty.replace(',', '.'), 10);
+    if (!Number.isFinite(q) || q < 1) return;
+    const useQty = Math.min(q, avail);
+    if (useQty < 1) return;
     addQty(selectedOffer, useQty);
-  }, [selectedOffer, customQtyM, cartQtyFor, addQty]);
+  }, [selectedOffer, customQty, cartQtyFor, addQty]);
 
   const cartTotal = useMemo(
-    () => cart.reduce((sum, l) => sum + l.quantityM * l.offer.unitPricePerM, 0),
+    () => cart.reduce((sum, l) => sum + l.quantity * l.offer.unitPrice, 0),
     [cart],
   );
 
@@ -236,7 +233,7 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
         {
           task_id: taskId,
           customer_reference: customerRef.trim() || undefined,
-          items: cart.map((l) => ({ inventory_id: l.inventoryId, quantity_m: l.quantityM })),
+          items: cart.map((l) => ({ inventory_id: l.inventoryId, quantity: l.quantity })),
           ...(showPricing
             ? {
                 initial_amount_paid: initialPaid,
@@ -332,7 +329,7 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
                 <span className="shrink-0 tabular-nums text-indigo-600 dark:text-indigo-400">{formatIls(ln.lineTotal)}</span>
               </div>
               <p className="mt-0.5 text-xs text-slate-500">
-                {ln.colorName} · {ln.quantityM} m × {formatIls(ln.unitPricePerM)} / m
+                {ln.colorName} · {ln.quantity} {t('unitsShort')} × {formatIls(ln.unitPrice)} / {t('unitsShort')}
               </p>
             </li>
           ))}
@@ -418,7 +415,7 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
     : 'flex min-h-[220px] max-h-72 flex-col rounded-xl border border-slate-100 dark:border-slate-800';
 
   const selectedAvail = selectedOffer
-    ? Math.max(0, selectedOffer.quantityM - cartQtyFor(selectedOffer.inventoryId))
+    ? Math.max(0, selectedOffer.quantity - cartQtyFor(selectedOffer.inventoryId))
     : 0;
 
   const SelectedProductCard = selectedOffer ? (
@@ -434,26 +431,26 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
             </p>
             <p className="mt-0.5 line-clamp-1 text-[11px] text-slate-500 dark:text-slate-400">
               {selectedOffer.profileCode} · {selectedOffer.colorName} · {t('salesStock')}:{' '}
-              {Number(selectedOffer.quantityM).toFixed(3)} m
-              {showPricing && ` · ${formatIls(selectedOffer.unitPricePerM)}/m`}
+              {Number(selectedOffer.quantity)} {t('unitsShort')}
+              {showPricing && ` · ${formatIls(selectedOffer.unitPrice)}/${t('unitsShort')}`}
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap items-end gap-2 sm:ms-auto">
             <div>
-              <label className="mb-0.5 block text-[10px] font-medium text-slate-500">{t('quantityM')}</label>
+              <label className="mb-0.5 block text-[10px] font-medium text-slate-500">{t('quantityUnits')}</label>
               <input
                 type="number"
-                step="0.001"
-                min={0.001}
-                max={selectedAvail + 0.0001}
-                value={customQtyM}
-                onChange={(e) => setCustomQtyM(e.target.value)}
+                step={1}
+                min={1}
+                max={Math.max(1, selectedAvail)}
+                value={customQty}
+                onChange={(e) => setCustomQty(e.target.value)}
                 className="w-24 rounded-md border border-slate-200 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
               />
             </div>
             <button
               type="button"
-              disabled={selectedAvail < 0.001}
+              disabled={selectedAvail < 1}
               onClick={addCustomQty}
               className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
             >
@@ -462,7 +459,7 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
           </div>
         </div>
         <p className="mt-1.5 border-t border-indigo-200/50 pt-1.5 text-[10px] text-slate-500 dark:border-indigo-900/50 dark:text-slate-400">
-          {t('salesAvailableAfterCart').replace('{m}', selectedAvail.toFixed(3))}
+          {t('salesAvailableAfterCart').replace('{n}', String(selectedAvail))}
         </p>
       </div>
     ) : (
@@ -470,25 +467,25 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
         <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">{t('salesSelectedProduct')}</p>
         <p className="mt-1 font-medium text-slate-900 dark:text-slate-100">{selectedOffer.profileName}</p>
         <p className="text-xs text-slate-600 dark:text-slate-400">
-          {selectedOffer.profileCode} · {selectedOffer.colorName} · {t('salesStock')}: {Number(selectedOffer.quantityM).toFixed(3)} m
-          {showPricing && ` · ${formatIls(selectedOffer.unitPricePerM)}/m`}
+          {selectedOffer.profileCode} · {selectedOffer.colorName} · {t('salesStock')}: {Number(selectedOffer.quantity)} {t('unitsShort')}
+          {showPricing && ` · ${formatIls(selectedOffer.unitPrice)}/${t('unitsShort')}`}
         </p>
         <div className="mt-2 flex flex-wrap items-end gap-2">
           <div>
-            <label className="mb-0.5 block text-[11px] text-slate-500">{t('quantityM')}</label>
+            <label className="mb-0.5 block text-[11px] text-slate-500">{t('quantityUnits')}</label>
             <input
               type="number"
-              step="0.001"
-              min={0.001}
-              max={selectedAvail + 0.0001}
-              value={customQtyM}
-              onChange={(e) => setCustomQtyM(e.target.value)}
+              step={1}
+              min={1}
+              max={Math.max(1, selectedAvail)}
+              value={customQty}
+              onChange={(e) => setCustomQty(e.target.value)}
               className="w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
             />
           </div>
           <button
             type="button"
-            disabled={selectedAvail < 0.001}
+            disabled={selectedAvail < 1}
             onClick={addCustomQty}
             className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
           >
@@ -496,7 +493,7 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
           </button>
         </div>
         <p className="mt-1 text-[11px] text-slate-500">
-          {t('salesAvailableAfterCart').replace('{m}', selectedAvail.toFixed(3))}
+          {t('salesAvailableAfterCart').replace('{n}', String(selectedAvail))}
         </p>
       </div>
     )
@@ -570,7 +567,7 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
               <ul className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
                 {filtered.map((o) => {
                   const reserved = cartQtyFor(o.inventoryId);
-                  const stock = Number(o.quantityM) || 0;
+                  const stock = Number(o.quantity) || 0;
                   const avail = Math.max(0, stock - reserved);
                   const isSel = selectedOffer?.inventoryId === o.inventoryId;
                   return (
@@ -584,18 +581,18 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
                         type="button"
                         onClick={() => {
                           setSelectedOffer(o);
-                          setCustomQtyM('1');
+                          setCustomQty('1');
                         }}
                         className="min-w-0 flex-1 cursor-pointer rounded-none p-2.5 text-start text-sm text-slate-900 outline-none transition hover:bg-slate-50/80 focus-visible:z-[1] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400 dark:text-slate-100 dark:hover:bg-slate-800/50"
                       >
                         <p className="pointer-events-none font-medium">{o.profileName}</p>
                         <p className="pointer-events-none text-xs text-slate-500">
-                          {o.profileCode} · {o.colorName} · {t('salesStock')}: {stock.toFixed(3)} m
+                          {o.profileCode} · {o.colorName} · {t('salesStock')}: {stock} {t('unitsShort')}
                         </p>
                         {o.usage && <p className="pointer-events-none mt-0.5 text-[11px] text-slate-400">{o.usage}</p>}
                         {showPricing && (
                           <p className="pointer-events-none mt-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                            {t('salesPricePerM')}: {formatIls(o.unitPricePerM)}
+                            {t('salesPricePerUnit')}: {formatIls(o.unitPrice)}
                           </p>
                         )}
                       </button>
@@ -605,23 +602,23 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
                             <button
                               key={n}
                               type="button"
-                              disabled={avail + 0.0001 < n}
+                              disabled={avail < n}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 addQty(o, n);
                               }}
                               className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-800 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-indigo-950"
                             >
-                              +{n}m
+                              +{n}
                             </button>
                           ))}
                         </div>
                         <button
                           type="button"
-                          disabled={avail < 0.001}
+                          disabled={avail < 1}
                           onClick={(e) => {
                             e.stopPropagation();
-                            addQty(o, Math.min(1, avail));
+                            if (avail >= 1) addQty(o, 1);
                           }}
                           className="text-[11px] font-medium text-indigo-600 hover:underline dark:text-indigo-400"
                         >
@@ -661,17 +658,17 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
                       <p className="font-medium text-slate-900 dark:text-slate-100">{line.offer.profileName}</p>
                       <p className="text-xs text-slate-500">
                         {line.offer.colorName}
-                        {showPricing && ` @ ${formatIls(line.offer.unitPricePerM)}/m`}
+                        {showPricing && ` @ ${formatIls(line.offer.unitPrice)}/${t('unitsShort')}`}
                       </p>
                       <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <label className="text-[11px] text-slate-500">{t('quantityM')}:</label>
+                        <label className="text-[11px] text-slate-500">{t('quantityUnits')}:</label>
                         <input
                           type="number"
-                          step="0.001"
-                          min={0.001}
-                          max={line.offer.quantityM}
-                          value={line.quantityM}
-                          onChange={(e) => setLineQty(line.inventoryId, parseFloat(e.target.value) || 0)}
+                          step={1}
+                          min={1}
+                          max={line.offer.quantity}
+                          value={line.quantity}
+                          onChange={(e) => setLineQty(line.inventoryId, parseInt(e.target.value, 10) || 0)}
                           className="w-24 rounded border border-slate-200 px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900"
                         />
                       </div>
@@ -679,7 +676,7 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
                     <div className="text-end">
                       {showPricing && (
                         <p className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
-                          {formatIls(line.quantityM * line.offer.unitPricePerM)}
+                          {formatIls(line.quantity * line.offer.unitPrice)}
                         </p>
                       )}
                       <button type="button" onClick={() => removeLine(line.inventoryId)} className="mt-1 text-xs text-red-600 hover:underline">
@@ -740,11 +737,11 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
               {cart.map((line) => (
                 <li key={line.inventoryId} className="flex justify-between gap-2 border-b border-slate-100 pb-2 dark:border-slate-800">
                   <span className="min-w-0 text-slate-700 dark:text-slate-300">
-                    {line.offer.profileName} · {line.offer.colorName} · {line.quantityM} m
+                    {line.offer.profileName} · {line.offer.colorName} · {line.quantity} {t('unitsShort')}
                   </span>
                   {showPricing && (
                     <span className="shrink-0 tabular-nums font-medium text-slate-900 dark:text-slate-100">
-                      {formatIls(line.quantityM * line.offer.unitPricePerM)}
+                      {formatIls(line.quantity * line.offer.unitPrice)}
                     </span>
                   )}
                 </li>

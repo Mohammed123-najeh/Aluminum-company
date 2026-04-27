@@ -9,6 +9,8 @@ class LeaveRequest extends Model
 {
     protected $fillable = [
         'user_id',
+        'supervisor_id',
+        'workflow_step',
         'type',
         'start_date',
         'end_date',
@@ -48,6 +50,8 @@ class LeaveRequest extends Model
             'userId'       => (string) $this->user_id,
             'userName'     => $this->user?->name,
             'userEmail'    => $this->user?->email,
+            'supervisorId' => $this->supervisor_id ? (string) $this->supervisor_id : null,
+            'workflowStep' => $this->workflow_step,
             'type'         => $this->type,
             'startDate'    => $this->start_date->format('Y-m-d'),
             'endDate'      => $this->end_date->format('Y-m-d'),

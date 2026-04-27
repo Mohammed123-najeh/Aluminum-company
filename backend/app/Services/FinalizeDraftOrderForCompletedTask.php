@@ -42,14 +42,14 @@ class FinalizeDraftOrderForCompletedTask
                     ->first();
 
                 $unit = $inv
-                    ? InventoryPricing::unitPricePerM($inv)
-                    : InventoryPricing::unitPricePerMForProfileColor((int) $item->profile_id, (string) $item->color_code);
+                    ? InventoryPricing::unitPrice($inv)
+                    : InventoryPricing::unitPriceForProfileColor((int) $item->profile_id, (string) $item->color_code);
 
-                $qty = (float) $item->quantity_m;
+                $qty = (int) $item->quantity;
                 $lineTotal = round($unit * $qty, 2);
                 $grand += $lineTotal;
 
-                $item->unit_price_per_m = $unit;
+                $item->unit_price = $unit;
                 $item->line_total = $lineTotal;
                 $item->save();
             }

@@ -3,7 +3,8 @@ import { useApp } from '../../contexts/AppContext';
 import type { ApiTask, TaskStatus } from '../../services/api';
 import { taskDueBucket } from '../../utils/taskDates';
 
-const STATUS_OPTIONS: TaskStatus[] = ['pending', 'in_progress', 'completed', 'cancelled'];
+/** Assignees may only set in progress or completed (supervisor sets cancelled / pending). */
+const ASSIGNEE_STATUS_OPTIONS: TaskStatus[] = ['in_progress', 'completed'];
 const STATUS_LABELS: Record<TaskStatus, string> = {
   pending: 'taskStatusPending',
   in_progress: 'taskStatusInProgress',
@@ -200,7 +201,7 @@ export const EmployeeTaskDetailPanel: React.FC<Props> = ({
                 <ul className="mt-3 list-inside list-disc space-y-1.5 border-t border-indigo-200/60 pt-3 text-sm text-slate-700 marker:text-indigo-400 dark:border-indigo-800/50 dark:text-slate-300">
                   {task.order.items.map((item, idx) => (
                     <li key={idx}>
-                      {item.profileName} · {item.colorName} · {item.quantityM} m
+                      {item.profileName} · {item.colorName} · {item.quantity} {t('unitsShort')}
                     </li>
                   ))}
                 </ul>
@@ -272,21 +273,31 @@ export const EmployeeTaskDetailPanel: React.FC<Props> = ({
               </h3>
 
               <div className="space-y-4">
+                {task.status === 'cancelled' && (
+                  <div
+                    className="rounded-xl border border-red-200 bg-red-50/90 px-3 py-2.5 text-sm text-red-900 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200"
+                    role="status"
+                  >
+                    {t('taskCancelledBySupervisorBanner')}
+                  </div>
+                )}
                 <div>
                   <p className="mb-2 text-xs font-medium text-slate-600 dark:text-slate-400">{t('changeTaskStatus')}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {STATUS_OPTIONS.filter((s) => s !== task.status).map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        disabled={updatingStatus}
-                        onClick={() => onUpdateStatus(s)}
-                        className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm font-medium text-slate-800 transition hover:border-indigo-300 hover:bg-indigo-50/80 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900/50 dark:text-slate-200 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
-                      >
-                        {updatingStatus ? '…' : t(STATUS_LABELS[s] as Parameters<typeof t>[0])}
-                      </button>
-                    ))}
-                  </div>
+                  {task.status === 'cancelled' ? null : (
+                    <div className="flex flex-wrap gap-2">
+                      {ASSIGNEE_STATUS_OPTIONS.filter((s) => s !== task.status).map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          disabled={updatingStatus}
+                          onClick={() => onUpdateStatus(s)}
+                          className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm font-medium text-slate-800 transition hover:border-indigo-300 hover:bg-indigo-50/80 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-900/50 dark:text-slate-200 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/40"
+                        >
+                          {updatingStatus ? '…' : t(STATUS_LABELS[s] as Parameters<typeof t>[0])}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {canStartOrder && (

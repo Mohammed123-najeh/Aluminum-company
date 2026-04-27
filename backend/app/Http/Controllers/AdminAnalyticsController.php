@@ -109,7 +109,7 @@ class AdminAnalyticsController extends Controller
         ];
 
         $inventoryRows = Inventory::query()->count();
-        $inventoryTotalM = (float) (Inventory::query()->sum('quantity_m') ?? 0);
+        $inventoryTotalUnits = (int) (Inventory::query()->sum('quantity') ?? 0);
 
         $aiBlock = [
             'conversations' => AiConversation::query()->count(),
@@ -135,7 +135,7 @@ class AdminAnalyticsController extends Controller
             'messages' => $messagesBlock,
             'storehouse' => [
                 'inventoryRows' => $inventoryRows,
-                'totalQuantityM' => round($inventoryTotalM, 3),
+                'totalQuantityUnits' => $inventoryTotalUnits,
             ],
             'ai' => $aiBlock,
             'financial' => [

@@ -120,6 +120,14 @@ export const EmployeeRequestsPanel: React.FC = () => {
     return t('requestCancelled');
   };
 
+  const leaveStatusLabel = (r: (typeof leaveMine)[number]) => {
+    if (r.status === 'pending') {
+      if (r.workflowStep === 'supervisor') return t('leaveStatusAwaitingSupervisor');
+      if (r.workflowStep === 'hr') return t('leaveStatusAwaitingHr');
+    }
+    return statusLabel(r.status);
+  };
+
   const tabBtn = (id: Tab, label: string) => (
     <button
       type="button"
@@ -288,7 +296,7 @@ export const EmployeeRequestsPanel: React.FC = () => {
                       {r.type === 'holiday' ? t('leaveTypeHoliday') : t('leaveTypeSick')} · {r.daysCount} {t('requestDays')}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {r.startDate} → {r.endDate} · {statusLabel(r.status)}
+                      {r.startDate} → {r.endDate} · {leaveStatusLabel(r)}
                     </p>
                   </div>
                   {r.status === 'pending' && (

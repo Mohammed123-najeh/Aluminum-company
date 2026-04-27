@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { LOW_STOCK_THRESHOLD_M } from '../../constants/inventory';
+import { LOW_STOCK_THRESHOLD_UNITS } from '../../constants/inventory';
 import { useApp } from '../../contexts/AppContext';
 import { useStorehouse } from '../../hooks/useStorehouse';
 import type { ApiMessageThreadSummary, ApiOrder, ApiTask, TaskStatus } from '../../services/api';
 import { messagesApi } from '../../services/api';
+import { SupervisorLeavePanel } from './SupervisorLeavePanel';
 
 type SectionNav = 'tasks' | 'messages' | 'orders' | 'inventory';
 
@@ -71,7 +72,7 @@ export const SupervisorDashboard: React.FC<Props> = ({ tasks, orders, ordersLoad
   );
 
   const lowStockCount = useMemo(
-    () => inventory.filter((i) => i.quantityM <= LOW_STOCK_THRESHOLD_M).length,
+    () => inventory.filter((i) => i.quantity <= LOW_STOCK_THRESHOLD_UNITS).length,
     [inventory],
   );
 
@@ -160,7 +161,7 @@ export const SupervisorDashboard: React.FC<Props> = ({ tasks, orders, ordersLoad
         />
         <Card
           title={t('widgetLowStock')}
-          hint={t('widgetLowStockHint').replace('{threshold}', String(LOW_STOCK_THRESHOLD_M))}
+          hint={t('widgetLowStockHint').replace('{threshold}', String(LOW_STOCK_THRESHOLD_UNITS))}
           value={lowStockCount}
           tone={lowStockCount > 0 ? 'amber' : 'default'}
           actionLabel={t('dashboardViewAll')}
@@ -256,6 +257,8 @@ export const SupervisorDashboard: React.FC<Props> = ({ tasks, orders, ordersLoad
           )}
         </div>
       </div>
+
+      <SupervisorLeavePanel />
     </div>
   );
 };

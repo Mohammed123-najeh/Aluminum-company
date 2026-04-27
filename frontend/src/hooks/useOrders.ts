@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { ApiOrder, CreateOrderPayload, UpdateOrderPayload } from '../services/api';
+import type { ApiOrder, ApiOrderPayment, CreateOrderPayload, UpdateOrderPayload } from '../services/api';
 import { ordersApi } from '../services/api';
 import { useApp } from '../contexts/AppContext';
 
@@ -73,5 +73,44 @@ export function useOrders() {
     [token],
   );
 
-  return { orders, loading, error, createOrder, updateOrder, updatePayment, refetch: fetchOrders };
+  const addOrderPayment = useCallback(
+    async (id: string, body: { amount: number; paid_at?: string | null; note?: string | null }) => {
+      if (!token) return undefined;
+      const updated = await ordersApi.addPayment(id, token, body);
+      setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
+      return updated;
+    },
+    [token],
+  );
+
+  const updateReceiptMeta = useCallback(
+    async (id: string, body: { customer_reference?: string | null }) => {
+      if (!token) return undefined;
+      const updated = await ordersApi.updateReceiptMeta(id, token, body);
+      setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
+      return updated;
+    },
+    [token],
+  );
+
+  const fetchOrderPayments = useCallback(
+    async (id: string): Promise<ApiOrderPayment[] | undefined> => {
+      if (!token) return undefined;
+      return ordersApi.listPayments(id, token);
+    },
+    [token],
+  );
+
+  return {
+    orders,
+    loading,
+    error,
+    createOrder,
+    updateOrder,
+    updatePayment,
+    addOrderPayment,
+    updateReceiptMeta,
+    fetchOrderPayments,
+    refetch: fetchOrders,
+  };
 }

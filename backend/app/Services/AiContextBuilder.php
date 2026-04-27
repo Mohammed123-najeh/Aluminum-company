@@ -52,12 +52,12 @@ class AiContextBuilder
     {
         $profileCount = Profile::query()->count();
         $inventoryLines = Inventory::query()->count();
-        $totalStockM = (float) (Inventory::query()->sum('quantity_m') ?? 0);
+        $totalStockUnits = (int) (Inventory::query()->sum('quantity') ?? 0);
 
         return [
             'profileCount' => $profileCount,
             'inventoryLineCount' => $inventoryLines,
-            'totalStockQuantityMetersApprox' => round($totalStockM, 3),
+            'totalStockUnits' => $totalStockUnits,
             'note' => 'Products are profile+color combinations; inventory lines are stock rows.',
         ];
     }
