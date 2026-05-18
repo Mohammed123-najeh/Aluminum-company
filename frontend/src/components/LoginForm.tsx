@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../contexts/AppContext';
 import { auth } from '../services/api';
+import { ForgotPasswordModal } from './ForgotPasswordModal';
 
 type Props = {
   onSuccess?: () => void;
@@ -15,6 +16,7 @@ export const LoginForm: React.FC<Props> = ({ onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -115,6 +117,7 @@ export const LoginForm: React.FC<Props> = ({ onSuccess }) => {
         </label>
         <button
           type="button"
+          onClick={() => setShowForgot(true)}
           className="font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
         >
           {t('forgotPassword')}
@@ -138,7 +141,7 @@ export const LoginForm: React.FC<Props> = ({ onSuccess }) => {
       <button
         type="submit"
         disabled={loading || success}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-sky-500 to-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition hover:from-sky-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-70"
+        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-linear-to-r from-sky-500 to-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition hover:from-sky-400 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {loading ? (
           <>
@@ -153,6 +156,14 @@ export const LoginForm: React.FC<Props> = ({ onSuccess }) => {
       <p className="text-center text-[11px] text-slate-400 dark:text-slate-500">
         {t('systemVersion')}
       </p>
+
+      {showForgot && (
+        <ForgotPasswordModal
+          initialEmail={identifier}
+          onClose={() => setShowForgot(false)}
+          onResetComplete={(email) => setIdentifier(email)}
+        />
+      )}
     </form>
   );
 };

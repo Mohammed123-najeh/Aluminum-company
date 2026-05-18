@@ -59,9 +59,14 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
   const canManage =
     canManageInventory ?? (currentUser?.role === 'supervisor' || currentUser?.role === 'employee');
 
+  // Plain employees should not see unit prices. Supervisors, admins, and the inventory edit form
+  // (when explicitly opened with canManage=true) still need them.
+  const canSeePrices = currentUser?.role !== 'employee';
+
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [colorFilter, setColorFilter] = useState<string>('');
   const [search, setSearch] = useState<string>('');
+  const [lowStockOnly, setLowStockOnly] = useState(false);
   const [page, setPage] = useState(1);
 
   const [showModal, setShowModal] = useState(false);
@@ -71,6 +76,14 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
   const [formProfileId, setFormProfileId] = useState<number | ''>('');
   const [formColorCode, setFormColorCode] = useState('');
   const [formQty, setFormQty] = useState('');
+  const [formUnitPrice, setFormUnitPrice] = useState('');
+  const [isNewProduct, setIsNewProduct] = useState(false);
+  const [formProductCode, setFormProductCode] = useState('');
+  const [formThickness, setFormThickness] = useState('');
+  const [formWeight, setFormWeight] = useState('');
+  const [formUsage, setFormUsage] = useState('');
+  const [formColorName, setFormColorName] = useState('');
+  const [formColorType, setFormColorType] = useState('');
   /** Editable display name for the selected profile (updates catalog `profiles.name`). */
   const [formProfileName, setFormProfileName] = useState('');
   const [saving, setSaving] = useState(false);
@@ -90,10 +103,10 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
     if (formProfileId === '') setFormProfileName('');
   }, [formProfileId]);
 
-  const filtered = useMemo(
-    () => filterInventory(inventory, search, categoryFilter, colorFilter),
-    [inventory, search, categoryFilter, colorFilter],
-  );
+  const filtered = useMemo(() => {
+    const base = filterInventory(inventory, search, categoryFilter, colorFilter);
+    return lowStockOnly ? base.filter((i) => i.quantity === 0 || i.quantity <= LOW_STOCK_THRESHOLD_UNITS) : base;
+  }, [inventory, search, categoryFilter, colorFilter, lowStockOnly]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -125,6 +138,14 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
     setFormProfileName('');
     setFormColorCode('');
     setFormQty('');
+    setFormUnitPrice('');
+    setIsNewProduct(true);
+    setFormProductCode('');
+    setFormThickness('');
+    setFormWeight('');
+    setFormUsage('');
+    setFormColorName('');
+    setFormColorType('');
     setShowModal(true);
   };
 
@@ -135,6 +156,14 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
     setFormProfileName(item.profileName ?? '');
     setFormColorCode(item.colorCode);
     setFormQty(String(item.quantity));
+    setFormUnitPrice(item.unitPrice != null ? String(item.unitPrice) : '');
+    setIsNewProduct(false);
+    setFormProductCode(item.profileCode ?? '');
+    setFormThickness(item.thicknessMm != null ? String(item.thicknessMm) : '');
+    setFormWeight(item.weightKgPerM != null ? String(item.weightKgPerM) : '');
+    setFormUsage(item.usage ?? '');
+    setFormColorName(item.colorName ?? '');
+    setFormColorType('');
     setShowModal(true);
   };
 
@@ -158,27 +187,48 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
     e.preventDefault();
     const qty = parseInt(formQty, 10);
     if (!Number.isFinite(qty) || qty < 0) return;
-    if (formProfileId === '' || !formColorCode) return;
+    if (!isNewProduct && (formProfileId === '' || !formColorCode)) return;
+    if (isNewProduct && (!formProfileName.trim() || !formCategoryCode || !formColorName.trim())) return;
     const nameTrim = formProfileName.trim();
     if (!nameTrim) {
       alert(t('profileNameRequired'));
       return;
     }
+    const unitPrice = formUnitPrice.trim() === '' ? null : Number(formUnitPrice);
+    if (unitPrice !== null && (!Number.isFinite(unitPrice) || unitPrice < 0)) return;
     const pid = formProfileId as number;
     const prof = profiles.find((p) => p.id === pid);
-    if (!prof) return;
-    const payload = {
+    if (!isNewProduct && !prof) return;
+    const payload = isNewProduct ? {
+      quantity: qty,
+      unit_price: unitPrice,
+      product_code: formProductCode.trim() || null,
+      product_name: nameTrim,
+      category_code: formCategoryCode,
+      thickness_mm: formThickness.trim() === '' ? null : Number(formThickness),
+      weight_kg_per_m: formWeight.trim() === '' ? null : Number(formWeight),
+      usage: formUsage.trim() || null,
+      color_code: formColorCode.trim() || null,
+      color_name: formColorName.trim(),
+      color_type: formColorType.trim() || null,
+    } : {
       profile_id: pid,
       color_code: formColorCode,
       quantity: qty,
+      unit_price: unitPrice,
     };
     setSaving(true);
     try {
-      if (nameTrim !== prof.name) {
+      if (!isNewProduct && prof && nameTrim !== prof.name) {
         await updateProfileName(pid, nameTrim);
       }
       if (editItem) {
-        await updateInventoryItem(editItem.id, payload);
+        await updateInventoryItem(editItem.id, {
+          profile_id: pid,
+          color_code: formColorCode,
+          quantity: qty,
+          unit_price: unitPrice,
+        });
       } else {
         await createInventoryItem(payload);
       }
@@ -256,6 +306,20 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
             placeholder={t('searchInventoryPlaceholder')}
             className="min-w-[200px] flex-1 max-w-sm rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-400/20 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
           />
+          <button
+            type="button"
+            onClick={() => {
+              setLowStockOnly((v) => !v);
+              setPage(1);
+            }}
+            className={`rounded-lg px-3 py-2 text-sm font-semibold ${
+              lowStockOnly
+                ? 'bg-rose-600 text-white'
+                : 'border border-rose-200 bg-white text-rose-700 dark:border-rose-900 dark:bg-slate-800 dark:text-rose-300'
+            }`}
+          >
+            Low / empty stock ({lowStockCount})
+          </button>
           <label className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-400">
             {t('filterByCategory')}:
             <select
@@ -326,7 +390,9 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
                     <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">{t('weightKgPerM')}</th>
                     <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">{t('usage')}</th>
                     <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">{t('color')}</th>
-                    <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">{t('salesPricePerUnit')}</th>
+                    {canSeePrices && (
+                      <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">{t('salesPricePerUnit')}</th>
+                    )}
                     <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">{t('quantityInStock')}</th>
                     {canManage && (
                       <th className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">{t('actionsCol')}</th>
@@ -369,9 +435,11 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
                       <td className="whitespace-nowrap px-4 py-3 text-slate-700 dark:text-slate-300">
                         {item.colorName} ({item.colorCode})
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 tabular-nums text-slate-700 dark:text-slate-300">
-                        {item.unitPrice != null ? formatIls(item.unitPrice) : '—'}
-                      </td>
+                      {canSeePrices && (
+                        <td className="whitespace-nowrap px-4 py-3 tabular-nums text-slate-700 dark:text-slate-300">
+                          {item.unitPrice != null ? formatIls(item.unitPrice) : '—'}
+                        </td>
+                      )}
                       <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900 dark:text-slate-100">
                         {item.quantity} {t('unitsShort')}
                       </td>
@@ -452,6 +520,12 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
             </h2>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t('inventoryFormIntro')}</p>
             <form onSubmit={handleSaveModal} className="mt-4 space-y-4">
+              {!editItem && (
+                <div className="flex gap-2 rounded-xl bg-slate-100 p-1 text-xs font-semibold dark:bg-slate-900">
+                  <button type="button" onClick={() => setIsNewProduct(true)} className={`flex-1 rounded-lg px-3 py-2 ${isNewProduct ? 'bg-white text-indigo-700 shadow dark:bg-slate-800 dark:text-indigo-300' : 'text-slate-600 dark:text-slate-300'}`}>New product</button>
+                  <button type="button" onClick={() => setIsNewProduct(false)} className={`flex-1 rounded-lg px-3 py-2 ${!isNewProduct ? 'bg-white text-indigo-700 shadow dark:bg-slate-800 dark:text-indigo-300' : 'text-slate-600 dark:text-slate-300'}`}>Existing catalog</button>
+                </div>
+              )}
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">{t('filterByCategory')}</label>
                 <select
@@ -468,7 +542,7 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
                 </select>
                 <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-500">{t('inventoryCategoryHint')}</p>
               </div>
-              <div>
+              {!isNewProduct && <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">{t('profile')}</label>
                 <select
                   required
@@ -494,8 +568,8 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
                     </option>
                   ))}
                 </select>
-              </div>
-              {formProfileId !== '' && (
+              </div>}
+              {(formProfileId !== '' || isNewProduct) && (
                 <div>
                   <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">{t('profileName')}</label>
                   <input
@@ -509,8 +583,35 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
                   <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-500">{t('inventoryProfileNameHint')}</p>
                 </div>
               )}
+              {isNewProduct && (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
+                    Product code
+                    <input value={formProductCode} onChange={(e) => setFormProductCode(e.target.value)} className={`${inputCls} mt-1`} placeholder="Auto if blank" />
+                  </label>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
+                    Thickness
+                    <input type="number" min="0" step="0.01" value={formThickness} onChange={(e) => setFormThickness(e.target.value)} className={`${inputCls} mt-1`} />
+                  </label>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
+                    Weight
+                    <input type="number" min="0" step="0.001" value={formWeight} onChange={(e) => setFormWeight(e.target.value)} className={`${inputCls} mt-1`} />
+                  </label>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
+                    Details
+                    <input value={formUsage} onChange={(e) => setFormUsage(e.target.value)} className={`${inputCls} mt-1`} />
+                  </label>
+                </div>
+              )}
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">{t('color')}</label>
+                {isNewProduct ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <input value={formColorName} onChange={(e) => setFormColorName(e.target.value)} className={inputCls} placeholder="Color name" required />
+                    <input value={formColorCode} onChange={(e) => setFormColorCode(e.target.value)} className={inputCls} placeholder="Color code (auto if blank)" />
+                    <input value={formColorType} onChange={(e) => setFormColorType(e.target.value)} className={inputCls} placeholder="Color type" />
+                  </div>
+                ) : (
                 <select
                   required
                   value={formColorCode}
@@ -524,6 +625,7 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
                     </option>
                   ))}
                 </select>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">{t('quantityUnits')}</label>
@@ -537,6 +639,20 @@ export const EmployeeInventory: React.FC<Props> = ({ canManageInventory }) => {
                   className={inputCls}
                 />
               </div>
+              {canSeePrices && (
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">{t('salesPricePerUnit')}</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={formUnitPrice}
+                    onChange={(e) => setFormUnitPrice(e.target.value)}
+                    className={inputCls}
+                    placeholder="Auto price if blank"
+                  />
+                </div>
+              )}
               {selectedProfile && (
                 <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-4 dark:border-slate-600 dark:bg-slate-900/40">
                   <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">

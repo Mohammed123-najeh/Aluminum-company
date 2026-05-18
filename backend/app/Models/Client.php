@@ -10,6 +10,8 @@ class Client extends Model
 {
     protected $fillable = [
         'supervisor_id',
+        'accountant_created_by',
+        'source',
         'name',
         'phone',
         'email',
@@ -19,6 +21,11 @@ class Client extends Model
     public function supervisor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'supervisor_id');
+    }
+
+    public function accountantCreator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'accountant_created_by');
     }
 
     public function tasks(): HasMany

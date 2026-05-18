@@ -199,11 +199,21 @@ export const EmployeeTaskDetailPanel: React.FC<Props> = ({
                   </p>
                 )}
                 <ul className="mt-3 list-inside list-disc space-y-1.5 border-t border-indigo-200/60 pt-3 text-sm text-slate-700 marker:text-indigo-400 dark:border-indigo-800/50 dark:text-slate-300">
-                  {task.order.items.map((item, idx) => (
-                    <li key={idx}>
-                      {item.profileName} · {item.colorName} · {item.quantity} {t('unitsShort')}
-                    </li>
-                  ))}
+                  {task.order.items.map((item, idx) => {
+                    const isAccessory = (item.categoryCode || '').toUpperCase() === 'ACCESSORIES';
+                    return (
+                      <li key={idx} className="flex flex-wrap items-center gap-1.5">
+                        <span>
+                          {item.profileName} · {item.colorName} · {item.quantity} {t('unitsShort')}
+                        </span>
+                        {isAccessory && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-linear-to-r from-indigo-500 to-violet-500 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                            {t('accessoryBadge')}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </section>
             )}

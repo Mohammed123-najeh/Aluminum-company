@@ -27,6 +27,7 @@ class UserController extends Controller
             'main_job'            => 'nullable|string|max:255',
             'supervisor_id'       => 'nullable|exists:users,id',
             'base_salary'         => 'nullable|numeric|min:0',
+            'hourly_rate'         => 'nullable|numeric|min:0',
             'annual_leave_balance'=> 'nullable|numeric|min:0',
         ]);
 
@@ -39,6 +40,7 @@ class UserController extends Controller
             'main_job'              => $data['main_job'] ?? null,
             'supervisor_id'         => $data['supervisor_id'] ?? null,
             'base_salary'           => $data['base_salary']         ?? null,
+            'hourly_rate'           => $data['hourly_rate']         ?? null,
             'annual_leave_balance'  => $data['annual_leave_balance'] ?? 0,
             'status'                => 'active',
         ]);
@@ -56,18 +58,12 @@ class UserController extends Controller
 
         $me = $request->user();
 
-        // HR staff: compensation only, any non-admin account
+        // Compensation (base_salary, hourly_rate, annual_leave_balance) is admin-only.
+        // HR keeps no direct edit access — they can still view via /hr/analytics.
         if ($me->isHrStaff()) {
-            $data = $request->validate([
-                'base_salary'           => 'sometimes|nullable|numeric|min:0',
-                'annual_leave_balance'  => 'sometimes|nullable|numeric|min:0',
-            ]);
-            if ($data === []) {
-                return response()->json(['message' => 'Provide base_salary and/or annual_leave_balance'], 422);
-            }
-            $user->update($data);
-
-            return response()->json($user->fresh()->toApiArray());
+            return response()->json([
+                'message' => 'Compensation is managed by admins. Please ask an administrator.',
+            ], 403);
         }
 
         if ($me->role !== 'admin') {
@@ -88,10 +84,11 @@ class UserController extends Controller
             'supervisor_id'         => 'nullable|exists:users,id',
             'status'                => 'sometimes|in:active,suspended',
             'base_salary'           => 'nullable|numeric|min:0',
+            'hourly_rate'           => 'nullable|numeric|min:0',
             'annual_leave_balance'  => 'nullable|numeric|min:0',
         ]);
 
-        if (isset($data['base_salary']) || isset($data['annual_leave_balance'])) {
+        if (array_key_exists('base_salary', $data) || array_key_exists('hourly_rate', $data) || array_key_exists('annual_leave_balance', $data)) {
             if ($me->role !== 'admin') {
                 return response()->json(['message' => 'You cannot update compensation fields'], 403);
             }

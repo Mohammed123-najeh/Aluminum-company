@@ -36,9 +36,11 @@ export const AdminMessages: React.FC<Props> = ({
   const selectedUser = selectedReceiverId ? staff.find((u) => u.id === selectedReceiverId) : null;
 
   const previewFor = (userId: string) => {
-    const s = threadSummaries.find((x) => 'receiverId' in x && x.receiverId === userId);
+    const s = threadSummaries.find((x) => x.peerId === userId || ('receiverId' in x && x.receiverId === userId));
     return s?.lastPreview ?? null;
   };
+  const unreadFor = (userId: string) =>
+    threadSummaries.find((x) => x.peerId === userId || ('receiverId' in x && x.receiverId === userId))?.unreadCount ?? 0;
 
   useEffect(() => {
     setBody('');
@@ -76,6 +78,7 @@ export const AdminMessages: React.FC<Props> = ({
             <div className="space-y-1">
               {sortedStaff.map((u) => {
                 const prev = previewFor(u.id);
+                const unread = unreadFor(u.id);
                 return (
                   <button
                     key={u.id}
@@ -87,7 +90,10 @@ export const AdminMessages: React.FC<Props> = ({
                         : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'
                     }`}
                   >
-                    <p className="truncate font-medium text-slate-900 dark:text-slate-100">{u.name}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate font-medium text-slate-900 dark:text-slate-100">{u.name}</p>
+                      {unread > 0 && <span className="rounded-full bg-indigo-600 px-1.5 py-px text-[10px] font-bold text-white">{unread}</span>}
+                    </div>
                     <p className="truncate text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">{roleLabel(u)}</p>
                     {prev && <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{prev}</p>}
                   </button>

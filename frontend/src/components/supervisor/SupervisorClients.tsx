@@ -1,11 +1,105 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import type { ApiClient, ApiClientDetailResponse } from '../../services/api';
 import { clientsApi } from '../../services/api';
+import { ClientDetailView } from '../clients/ClientDetailView';
 import { formatIls } from '../../utils/currency';
 
-function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? '')
+    .join('');
+}
+
+function ClientListItem({
+  client,
+  active,
+  onClick,
+}: {
+  client: ApiClient;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const { t } = useApp();
+  const a = client.analytics;
+  const hasActivity = a && (a.orderCount > 0 || a.totalPurchases > 0 || a.balanceDue > 0);
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${
+          active
+            ? 'bg-indigo-600 text-white shadow-sm'
+            : 'hover:bg-indigo-50 dark:hover:bg-indigo-950/30'
+        }`}
+      >
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+            active
+              ? 'bg-white/20 text-white ring-1 ring-white/30'
+              : 'bg-indigo-100 text-indigo-700 group-hover:bg-indigo-200 dark:bg-indigo-900/40 dark:text-indigo-300'
+          }`}
+        >
+          {initials(client.name) || '?'}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p
+            className={`truncate text-sm font-semibold ${
+              active ? 'text-white' : 'text-slate-800 dark:text-slate-100'
+            }`}
+          >
+            {client.name}
+          </p>
+          <p
+            className={`truncate text-xs ${
+              active ? 'text-indigo-100' : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            {client.phone ?? client.email ?? '—'}
+          </p>
+          {hasActivity && a && (
+            <p
+              className={`mt-1 flex flex-wrap gap-x-2 truncate text-[11px] font-medium tabular-nums ${
+                active ? 'text-indigo-50' : 'text-slate-500 dark:text-slate-400'
+              }`}
+            >
+              <span>{a.orderCount} {t('clientOrdersCount')}</span>
+              <span>· {formatIls(a.totalPurchases)}</span>
+              {a.balanceDue > 0 && (
+                <span
+                  className={
+                    active
+                      ? 'text-amber-100'
+                      : 'text-amber-700 dark:text-amber-300'
+                  }
+                >
+                  · {t('clientBalanceDue')}: {formatIls(a.balanceDue)}
+                </span>
+              )}
+            </p>
+          )}
+        </div>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          className={`h-4 w-4 shrink-0 transition ${
+            active ? 'text-white' : 'text-slate-300 group-hover:text-indigo-500 dark:text-slate-600'
+          }`}
+        >
+          <path
+            fillRule="evenodd"
+            d="M7.21 14.77a.75.75 0 0 1 .02-1.06L10.94 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.25 4.25a.75.75 0 0 1 0 1.08l-4.25 4.25a.75.75 0 0 1-1.06-.02Z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </button>
+    </li>
+  );
 }
 
 export const SupervisorClients: React.FC = () => {
@@ -15,9 +109,12 @@ export const SupervisorClients: React.FC = () => {
   const [list, setList] = useState<ApiClient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ApiClientDetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  const [showForm, setShowForm] = useState(false);
   const [formName, setFormName] = useState('');
   const [formPhone, setFormPhone] = useState('');
   const [formEmail, setFormEmail] = useState('');
@@ -47,19 +144,37 @@ export const SupervisorClients: React.FC = () => {
     void loadList();
   }, [loadList]);
 
-  const openDetail = async (id: string) => {
-    if (!token) return;
-    setDetailLoading(true);
-    setDetail(null);
-    try {
-      const d = await clientsApi.get(id, token);
-      setDetail(d);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load client');
-    } finally {
-      setDetailLoading(false);
+  const openDetail = useCallback(
+    async (id: string) => {
+      if (!token) return;
+      setActiveId(id);
+      setDetailLoading(true);
+      try {
+        const d = await clientsApi.get(id, token);
+        setDetail(d);
+        // Detail load triggers a server-side backfill of order.client_id; refresh the list so
+        // newly-attributed orders show up in the sidebar totals immediately.
+        clientsApi
+          .list(token, debouncedQ || undefined)
+          .then((data) => setList(data))
+          .catch(() => {
+            /* non-fatal — keep stale list */
+          });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to load client');
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    [token, debouncedQ],
+  );
+
+  // Auto-select first client once the list loads (only on initial load, not on search).
+  useEffect(() => {
+    if (!activeId && !loading && list.length > 0) {
+      void openDetail(list[0].id);
     }
-  };
+  }, [activeId, loading, list, openDetail]);
 
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,6 +195,7 @@ export const SupervisorClients: React.FC = () => {
       setFormPhone('');
       setFormEmail('');
       setFormNotes('');
+      setShowForm(false);
       setList((prev) => [c, ...prev].sort((a, b) => a.name.localeCompare(b.name)));
       await openDetail(c.id);
     } catch (e) {
@@ -90,24 +206,70 @@ export const SupervisorClients: React.FC = () => {
   };
 
   const inputCls =
-    'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100';
+    'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100';
+
+  const totalDue = useMemo(() => list.length, [list]);
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-6 lg:grid-cols-2">
-        <form onSubmit={onCreate} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-          <h3 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">{t('registerClient')}</h3>
-          <div className="space-y-3">
+    <div className="space-y-5">
+      {error && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
+          {error}
+        </div>
+      )}
+
+      {/* Add-client toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+            {t('clientsSectionTitle')}
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {totalDue} {t('clientsSectionTitle').toLowerCase()}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowForm((v) => !v)}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+            <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
+          </svg>
+          {t('registerClient')}
+        </button>
+      </div>
+
+      {showForm && (
+        <form
+          onSubmit={onCreate}
+          className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800"
+        >
+          <h3 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">
+            {t('registerClient')}
+          </h3>
+          <div className="grid gap-3 md:grid-cols-2">
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">{t('clientName')}</label>
-              <input className={inputCls} value={formName} onChange={(e) => setFormName(e.target.value)} required />
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
+                {t('clientName')}
+              </label>
+              <input
+                className={inputCls}
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                required
+              />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">{t('clientPhone')}</label>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
+                {t('clientPhone')}
+              </label>
               <input className={inputCls} value={formPhone} onChange={(e) => setFormPhone(e.target.value)} />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">{t('clientEmail')}</label>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
+                {t('clientEmail')}
+              </label>
               <input
                 type="email"
                 className={inputCls}
@@ -116,151 +278,82 @@ export const SupervisorClients: React.FC = () => {
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">{t('clientNotes')}</label>
-              <textarea className={inputCls} rows={2} value={formNotes} onChange={(e) => setFormNotes(e.target.value)} />
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
+                {t('clientNotes')}
+              </label>
+              <textarea
+                className={inputCls}
+                rows={2}
+                value={formNotes}
+                onChange={(e) => setFormNotes(e.target.value)}
+              />
             </div>
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowForm(false)}
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              {t('cancel')}
+            </button>
             <button
               type="submit"
               disabled={saving || !formName.trim()}
-              className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
             >
               {saving ? '…' : t('saveChanges')}
             </button>
           </div>
         </form>
+      )}
 
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-          <h3 className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-100">{t('clientsSectionTitle')}</h3>
-          <input
-            type="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder={t('clientSearchPlaceholder')}
-            className={inputCls + ' mb-3'}
-          />
-          {loading && <p className="text-sm text-slate-500">{t('loading')}</p>}
-          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-          {!loading && !error && list.length === 0 && (
-            <p className="text-sm text-slate-500 dark:text-slate-400">{t('noClientsYet')}</p>
+      {/* Master-detail layout */}
+      <div className="grid gap-5 lg:grid-cols-[20rem_1fr]">
+        <aside className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+          <div className="relative mb-3">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="pointer-events-none absolute inset-s-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+            >
+              <path
+                fillRule="evenodd"
+                d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z"
+                clipRule="evenodd"
+              />
+            </svg>
+            <input
+              type="search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder={t('clientSearchPlaceholder')}
+              className={`${inputCls} ps-9`}
+            />
+          </div>
+          {loading && (
+            <p className="px-2 py-4 text-sm text-slate-500 dark:text-slate-400">{t('loading')}</p>
           )}
-          <ul className="max-h-80 space-y-1 overflow-auto">
+          {!loading && list.length === 0 && (
+            <p className="px-2 py-4 text-sm text-slate-500 dark:text-slate-400">{t('noClientsYet')}</p>
+          )}
+          <ul className="max-h-128 space-y-1 overflow-auto pe-1">
             {list.map((c) => (
-              <li key={c.id}>
-                <button
-                  type="button"
-                  onClick={() => void openDetail(c.id)}
-                  className="flex w-full items-center justify-between rounded-lg border border-transparent px-3 py-2 text-left text-sm transition hover:border-indigo-200 hover:bg-indigo-50/80 dark:hover:border-indigo-900 dark:hover:bg-indigo-950/30"
-                >
-                  <span className="font-medium text-slate-800 dark:text-slate-100">{c.name}</span>
-                  {c.phone && <span className="text-xs text-slate-500">{c.phone}</span>}
-                </button>
-              </li>
+              <ClientListItem
+                key={c.id}
+                client={c}
+                active={c.id === activeId}
+                onClick={() => void openDetail(c.id)}
+              />
             ))}
           </ul>
-        </div>
-      </div>
+        </aside>
 
-      {(detailLoading || detail) && (
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-          {detailLoading && <p className="text-sm text-slate-500">{t('loading')}</p>}
-          {detail && !detailLoading && (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{detail.client.name}</h3>
-                  <p className="text-sm text-slate-600 dark:text-slate-300">
-                    {[detail.client.phone, detail.client.email].filter(Boolean).join(' · ') || '—'}
-                  </p>
-                  {detail.client.notes && (
-                    <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">{detail.client.notes}</p>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                  <div className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-900/50">
-                    <p className="text-[10px] font-semibold uppercase text-slate-500">{t('clientOrdersCount')}</p>
-                    <p className="text-lg font-bold tabular-nums text-slate-900 dark:text-slate-100">
-                      {detail.analytics.orderCount}
-                    </p>
-                  </div>
-                  <div className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-900/50">
-                    <p className="text-[10px] font-semibold uppercase text-slate-500">{t('clientTotalPurchases')}</p>
-                    <p className="text-lg font-bold tabular-nums text-slate-900 dark:text-slate-100">
-                      {formatIls(detail.analytics.totalPurchases)}
-                    </p>
-                  </div>
-                  <div className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-900/50">
-                    <p className="text-[10px] font-semibold uppercase text-slate-500">{t('clientTotalPaid')}</p>
-                    <p className="text-lg font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
-                      {formatIls(detail.analytics.totalPaid)}
-                    </p>
-                  </div>
-                  <div className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-900/50">
-                    <p className="text-[10px] font-semibold uppercase text-slate-500">{t('clientBalanceDue')}</p>
-                    <p className="text-lg font-bold tabular-nums text-amber-700 dark:text-amber-400">
-                      {formatIls(detail.analytics.balanceDue)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div>
-                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{t('clientOrderHistory')}</h4>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-600">
-                        <th className="py-2 pr-2">{t('receiptReceiptNo')}</th>
-                        <th className="py-2 pr-2">{t('receiptAmountPaid')}</th>
-                        <th className="py-2 pr-2">{t('salesReceiptTotal')}</th>
-                        <th className="py-2">{t('dateCol')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detail.orders.map((o) => (
-                        <tr key={o.id} className="border-b border-slate-100 dark:border-slate-700">
-                          <td className="py-2 pr-2 font-mono text-xs">{o.receiptNumber ?? o.id.slice(0, 8)}</td>
-                          <td className="py-2 pr-2 tabular-nums">{formatIls(o.amountPaid)}</td>
-                          <td className="py-2 pr-2 tabular-nums">
-                            {o.totalAmount != null ? formatIls(o.totalAmount) : '—'}
-                          </td>
-                          <td className="py-2 text-xs text-slate-500">
-                            {new Date(o.updatedAt).toLocaleDateString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${esc(
-                    detail.client.name,
-                  )}</title><style>body{font-family:system-ui,sans-serif;padding:24px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:left}h1{font-size:1.25rem}</style></head><body>
-<h1>${esc(detail.client.name)}</h1>
-<p>${esc([detail.client.phone, detail.client.email].filter(Boolean).join(' · ') || '—')}</p>
-<h2>${esc(t('clientAnalytics'))}</h2>
-<p>${esc(t('clientOrdersCount'))}: ${detail.analytics.orderCount}</p>
-<p>${esc(t('clientTotalPurchases'))}: ${formatIls(detail.analytics.totalPurchases)}</p>
-<p>${esc(t('clientTotalPaid'))}: ${formatIls(detail.analytics.totalPaid)}</p>
-<p>${esc(t('clientBalanceDue'))}: ${formatIls(detail.analytics.balanceDue)}</p>
-</body></html>`;
-                  const w = window.open('', '_blank');
-                  if (w) {
-                    w.document.write(html);
-                    w.document.close();
-                    w.focus();
-                    w.print();
-                  }
-                }}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
-              >
-                {t('printReceipt')}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+        <section>
+          <ClientDetailView detail={detail} loading={detailLoading} />
+        </section>
+      </div>
     </div>
   );
 };

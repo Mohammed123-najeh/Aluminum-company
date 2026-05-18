@@ -16,6 +16,16 @@ export type ReceiptCustomerInfo = {
   clientLabel?: string | null;
 };
 
+/**
+ * Scope of the catalog shown by the panel.
+ * - `aluminum` (default): hides ACCESSORIES rows so the supervisor sees only aluminum products.
+ * - `accessories`: shows ONLY ACCESSORIES rows (and disables the user-facing category filter).
+ * - `all`: no scoping (legacy behavior used by employee inventory/sales views).
+ */
+export type CatalogScope = 'aluminum' | 'accessories' | 'all';
+
+const ACCESSORIES_CATEGORY_CODE = 'ACCESSORIES';
+
 export type StockTaskFulfillmentPanelProps = {
   /** Supervisor: full pricing and receipt. Employee: selection only, no prices/totals. */
   mode: 'supervisor' | 'employee';
@@ -36,6 +46,8 @@ export type StockTaskFulfillmentPanelProps = {
   receiptCustomerInfo?: ReceiptCustomerInfo;
   /** After supervisor dismisses success receipt (fullscreen wizard). */
   onReceiptDismiss?: () => void;
+  /** Restrict the catalog to aluminum or accessories. Defaults to `all` to keep existing callers unchanged. */
+  catalogScope?: CatalogScope;
 };
 
 function norm(s: string) {
@@ -68,6 +80,7 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
   variant = 'embedded',
   receiptCustomerInfo,
   onReceiptDismiss,
+  catalogScope = 'all',
 }) => {
   const { t, token } = useApp();
   const [offers, setOffers] = useState<ApiInventoryOffer[]>([]);
@@ -117,28 +130,45 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
     onCartChange?.(cart, customerRef);
   }, [cart, customerRef, onCartChange]);
 
+  // Reset narrow filters whenever the wizard scope flips so a leftover category/color
+  // selection from one scope doesn't make the other look empty.
+  useEffect(() => {
+    setCategoryFilter('');
+    setColorFilter('');
+    setSelectedOffer(null);
+  }, [catalogScope]);
+
+  /** Offers narrowed by the wizard scope (aluminum vs accessories) before any user filter. */
+  const scopedOffers = useMemo(() => {
+    if (catalogScope === 'all') return offers;
+    if (catalogScope === 'accessories') {
+      return offers.filter((o) => (o.categoryCode || '') === ACCESSORIES_CATEGORY_CODE);
+    }
+    return offers.filter((o) => (o.categoryCode || '') !== ACCESSORIES_CATEGORY_CODE);
+  }, [offers, catalogScope]);
+
   const categories = useMemo(() => {
     const s = new Set<string>();
-    for (const o of offers) {
+    for (const o of scopedOffers) {
       const c = o.categoryCode || o.categoryName;
       if (c) s.add(String(c));
     }
     return Array.from(s).sort((a, b) => a.localeCompare(b));
-  }, [offers]);
+  }, [scopedOffers]);
 
   const colorOptions = useMemo(() => {
     const m = new Map<string, string>();
-    for (const o of offers) {
+    for (const o of scopedOffers) {
       m.set(o.colorCode, o.colorName);
     }
     return Array.from(m.entries())
       .sort((a, b) => a[1].localeCompare(b[1]))
       .map(([code, name]) => ({ code, name }));
-  }, [offers]);
+  }, [scopedOffers]);
 
   const filtered = useMemo(() => {
     const q = norm(search);
-    let list = offers;
+    let list = scopedOffers;
     if (categoryFilter) {
       list = list.filter((o) => (o.categoryCode || o.categoryName || '') === categoryFilter);
     }
@@ -150,7 +180,7 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
       const blob = [o.profileName, o.profileCode, o.categoryName ?? '', o.usage ?? '', o.colorName, o.colorCode].join(' ');
       return norm(blob).includes(q);
     });
-  }, [offers, search, categoryFilter, colorFilter]);
+  }, [scopedOffers, search, categoryFilter, colorFilter]);
 
   const cartQtyFor = useCallback(
     (id: number) => cart.filter((l) => l.inventoryId === id).reduce((a, l) => a + l.quantity, 0),

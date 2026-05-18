@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import { useUsers } from '../../hooks/useUsers';
-import { leaveRequestsApi, salaryRequestsApi, usersApi, type ApiLeaveRequest, type ApiSalaryRequest } from '../../services/api';
+import { debitRequestsApi, leaveRequestsApi, salaryRequestsApi, usersApi, type ApiDebitRequest, type ApiLeaveRequest, type ApiSalaryRequest } from '../../services/api';
 import { formatIls } from '../../utils/currency';
 
-type DecideKind = 'leave' | null;
+type DecideKind = 'leave' | 'debit' | null;
 
 export const HrCenterPanel: React.FC = () => {
   const { t, token } = useApp();
   const { users, loading: usersLoading, refetch: refetchUsers } = useUsers();
   const [leaveRows, setLeaveRows] = useState<ApiLeaveRequest[]>([]);
   const [salaryRows, setSalaryRows] = useState<ApiSalaryRequest[]>([]);
+  const [debitRows, setDebitRows] = useState<ApiDebitRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -43,9 +44,10 @@ export const HrCenterPanel: React.FC = () => {
     setLoading(true);
     setErr(null);
     try {
-      const [l, s] = await Promise.all([leaveRequestsApi.listHr(token), salaryRequestsApi.listHr(token)]);
+      const [l, s, d] = await Promise.all([leaveRequestsApi.listHr(token), salaryRequestsApi.listHr(token), debitRequestsApi.listHr(token)]);
       setLeaveRows(l);
       setSalaryRows(s);
+      setDebitRows(d);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -99,8 +101,9 @@ export const HrCenterPanel: React.FC = () => {
 
   const pendingLeave = leaveRows.filter((r) => r.status === 'pending');
   const pendingSalary = salaryRows.filter((r) => r.status === 'pending');
+  const pendingDebit = debitRows.filter((r) => r.status === 'pending');
 
-  const openDecide = (kind: 'leave', id: string) => {
+  const openDecide = (kind: 'leave' | 'debit', id: string) => {
     setDecideKind(kind);
     setDecideId(id);
     setDecideStatus('approved');
@@ -113,10 +116,17 @@ export const HrCenterPanel: React.FC = () => {
     setErr(null);
     setSuccessMsg(null);
     try {
-      await leaveRequestsApi.decide(token, decideId, {
-        status: decideStatus,
-        decision_note: decideNote.trim() || null,
-      });
+      if (decideKind === 'leave') {
+        await leaveRequestsApi.decide(token, decideId, {
+          status: decideStatus,
+          decision_note: decideNote.trim() || null,
+        });
+      } else {
+        await debitRequestsApi.decide(token, decideId, {
+          status: decideStatus,
+          decision_note: decideNote.trim() || null,
+        });
+      }
       setDecideKind(null);
       setDecideId(null);
       await load();
@@ -189,6 +199,36 @@ export const HrCenterPanel: React.FC = () => {
                     {t('requestApprove')} / {t('requestReject')}
                   </button>
                 </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Pending salary advances</h3>
+        {loading ? (
+          <p className="mt-2 text-sm text-slate-500">{t('requestSubmitting')}</p>
+        ) : pendingDebit.length === 0 ? (
+          <p className="mt-2 text-sm text-slate-500">{t('hrNoPending')}</p>
+        ) : (
+          <ul className="mt-4 divide-y divide-slate-100 dark:divide-slate-800">
+            {pendingDebit.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
+                <div>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{r.userName}</p>
+                  <p className="text-xs text-slate-500">
+                    {formatIls(Number(r.amount))}
+                    {r.reason ? ` Â· ${r.reason}` : ''}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openDecide('debit', r.id)}
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white"
+                >
+                  {t('requestApprove')} / {t('requestReject')}
+                </button>
               </li>
             ))}
           </ul>
@@ -281,7 +321,9 @@ export const HrCenterPanel: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => !savingDecision && setDecideKind(null)} />
           <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-800">
-            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t('hrPendingLeave')}</h4>
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              {decideKind === 'debit' ? 'Salary advance' : t('hrPendingLeave')}
+            </h4>
             <div className="mt-4 flex gap-2">
               {(['approved', 'rejected'] as const).map((s) => (
                 <button

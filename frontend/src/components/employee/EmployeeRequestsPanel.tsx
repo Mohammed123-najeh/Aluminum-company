@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../../contexts/AppContext';
-import { leaveRequestsApi, salaryRequestsApi, type ApiLeaveRequest, type ApiSalaryRequest } from '../../services/api';
+import { debitRequestsApi, leaveRequestsApi, salaryRequestsApi, type ApiDebitRequest, type ApiLeaveRequest, type ApiSalaryRequest } from '../../services/api';
 import { formatIls } from '../../utils/currency';
 
-type Tab = 'leave' | 'salary';
+type Tab = 'leave' | 'salary' | 'debit';
 
 function parseNum(s: string | null | undefined): number | null {
   if (s == null || s === '') return null;
@@ -16,6 +16,7 @@ export const EmployeeRequestsPanel: React.FC = () => {
   const [tab, setTab] = useState<Tab>('leave');
   const [leaveMine, setLeaveMine] = useState<ApiLeaveRequest[]>([]);
   const [salaryMine, setSalaryMine] = useState<ApiSalaryRequest[]>([]);
+  const [debitMine, setDebitMine] = useState<ApiDebitRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -27,15 +28,18 @@ export const EmployeeRequestsPanel: React.FC = () => {
 
   const [reqSalary, setReqSalary] = useState('');
   const [salaryReason, setSalaryReason] = useState('');
+  const [debitAmount, setDebitAmount] = useState('');
+  const [debitReason, setDebitReason] = useState('');
 
   const load = useCallback(async () => {
     if (!token) return;
     setLoading(true);
     setErr(null);
     try {
-      const [l, s] = await Promise.all([leaveRequestsApi.mine(token), salaryRequestsApi.mine(token)]);
+      const [l, s, d] = await Promise.all([leaveRequestsApi.mine(token), salaryRequestsApi.mine(token), debitRequestsApi.mine(token)]);
       setLeaveMine(l);
       setSalaryMine(s);
+      setDebitMine(d);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -93,6 +97,26 @@ export const EmployeeRequestsPanel: React.FC = () => {
     }
   };
 
+  const submitDebit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || debitAmount.trim() === '') return;
+    setSubmitting(true);
+    setErr(null);
+    try {
+      await debitRequestsApi.create(token, {
+        amount: Number(debitAmount),
+        reason: debitReason.trim() || null,
+      });
+      setDebitAmount('');
+      setDebitReason('');
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const cancelLeave = async (id: string) => {
     if (!token) return;
     try {
@@ -107,6 +131,16 @@ export const EmployeeRequestsPanel: React.FC = () => {
     if (!token) return;
     try {
       await salaryRequestsApi.cancel(token, id);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed');
+    }
+  };
+
+  const cancelDebit = async (id: string) => {
+    if (!token) return;
+    try {
+      await debitRequestsApi.cancel(token, id);
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed');
@@ -149,6 +183,7 @@ export const EmployeeRequestsPanel: React.FC = () => {
         <div className="mt-3 flex flex-wrap gap-2">
           {tabBtn('leave', `${t('leaveTypeHoliday')} / ${t('leaveTypeSick')}`)}
           {tabBtn('salary', t('requestSubmitSalary'))}
+          {tabBtn('debit', 'Salary advance')}
         </div>
       </div>
 
@@ -280,6 +315,43 @@ export const EmployeeRequestsPanel: React.FC = () => {
         </form>
       )}
 
+      {tab === 'debit' && (
+        <form
+          onSubmit={submitDebit}
+          className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900"
+        >
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Request salary advance</h3>
+          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
+            Amount
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              required
+              value={debitAmount}
+              onChange={(e) => setDebitAmount(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800"
+            />
+          </label>
+          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">
+            {t('requestReason')}
+            <textarea
+              value={debitReason}
+              onChange={(e) => setDebitReason(e.target.value)}
+              rows={2}
+              className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow disabled:opacity-50"
+          >
+            {submitting ? t('requestSubmitting') : 'Submit advance request'}
+          </button>
+        </form>
+      )}
+
       {tab === 'leave' && (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-700 dark:bg-slate-900">
           <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-slate-100">{t('requestMyLeaveList')}</h3>
@@ -340,6 +412,39 @@ export const EmployeeRequestsPanel: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => void cancelSalary(r.id)}
+                      className="text-xs font-medium text-red-600 hover:underline dark:text-red-400"
+                    >
+                      {t('requestCancel')}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {tab === 'debit' && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-700 dark:bg-slate-900">
+          <h3 className="mb-4 text-sm font-semibold text-slate-900 dark:text-slate-100">My salary advances</h3>
+          {loading ? (
+            <p className="text-sm text-slate-500">{t('requestSubmitting')}</p>
+          ) : debitMine.length === 0 ? (
+            <p className="text-sm text-slate-500">â€”</p>
+          ) : (
+            <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+              {debitMine.map((r) => (
+                <li key={r.id} className="flex flex-wrap items-start justify-between gap-2 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                      {formatIls(Number(r.amount))} â†’ {statusLabel(r.status)}
+                    </p>
+                    {r.decisionNote && <p className="text-xs text-slate-500">{r.decisionNote}</p>}
+                  </div>
+                  {r.status === 'pending' && (
+                    <button
+                      type="button"
+                      onClick={() => void cancelDebit(r.id)}
                       className="text-xs font-medium text-red-600 hover:underline dark:text-red-400"
                     >
                       {t('requestCancel')}

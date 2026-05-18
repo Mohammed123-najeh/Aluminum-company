@@ -89,9 +89,20 @@ class TaskController extends Controller
             'due_date' => $data['due_date'] ?? null,
             'order_reference' => $data['order_reference'] ?? null,
             'customer_name' => $data['customer_name'] ?? null,
+            'customer_phone' => $data['customer_phone'] ?? null,
+            'client_id' => $data['client_id'] ?? null,
             'order_id' => $data['order_id'] ?? null,
             'status' => Task::STATUS_PENDING,
         ]);
+
+        // If this task is attached to an existing order, propagate the client_id onto the order so
+        // the client section aggregates correctly when payments are added later. Overwrite any
+        // prior value too, otherwise re-linking the task to a different client never reaches
+        // the order and the new client keeps showing zero totals.
+        if (! empty($data['client_id']) && ! empty($data['order_id'])) {
+            Order::where('id', $data['order_id'])
+                ->update(['client_id' => $data['client_id']]);
+        }
 
         $task->assignees()->sync($data['assignee_ids']);
         $task->load('assignees:id,name,email', 'client:id,name,phone,email', 'order.items.profile', 'order.items.color', 'attachments');
@@ -215,6 +226,14 @@ class TaskController extends Controller
             if (array_key_exists('order_id', $data)) {
                 $task->order_id = $data['order_id'];
             }
+            // Propagate the task's client to its linked order so the Clients section aggregates
+            // payments correctly. Always overwrite — when the supervisor re-links the task to a
+            // different client, the order must follow.
+            $linkedOrderId = $task->order_id;
+            if ($linkedOrderId && $task->client_id) {
+                Order::where('id', $linkedOrderId)
+                    ->update(['client_id' => $task->client_id]);
+            }
             if (isset($data['assignee_ids'])) {
                 $subordinateIds = $user->subordinates()->pluck('id')->toArray();
                 foreach ($data['assignee_ids'] as $id) {
@@ -311,6 +330,7 @@ class TaskController extends Controller
                 'items' => $order->items->map(fn ($i) => [
                     'profileCode' => $i->profile?->profile_id,
                     'profileName' => $i->profile?->name,
+                    'categoryCode' => $i->profile?->category_code,
                     'categoryName' => $i->profile?->category?->category_name,
                     'colorCode' => $i->color_code,
                     'colorName' => $i->color?->name,

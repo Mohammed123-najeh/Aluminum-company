@@ -84,16 +84,66 @@ class StorehouseController extends Controller
         }
         $inventory = $query->get();
 
-        return response()->json($inventory->map(fn ($i) => $this->inventoryRowToArray($i)));
+        // Hide unit prices from plain employees.
+        $hidePrice = $request->user()?->role === 'employee';
+
+        return response()->json($inventory->map(function ($i) use ($hidePrice) {
+            $row = $this->inventoryRowToArray($i);
+            if ($hidePrice) {
+                $row['unitPrice'] = null;
+            }
+
+            return $row;
+        }));
     }
 
     public function storeInventory(Request $request)
     {
         $data = $request->validate([
-            'profile_id' => 'required|exists:profiles,id',
-            'color_code' => 'required|exists:colors,color_code',
+            'profile_id' => 'nullable|exists:profiles,id',
+            'color_code' => 'nullable|string|max:30',
             'quantity' => 'required|integer|min:0',
+            'unit_price' => 'nullable|numeric|min:0',
+            'product_code' => 'nullable|string|max:30|unique:profiles,profile_id',
+            'product_name' => 'nullable|string|max:255',
+            'category_code' => 'nullable|exists:product_categories,category_code',
+            'thickness_mm' => 'nullable|numeric|min:0',
+            'weight_kg_per_m' => 'nullable|numeric|min:0',
+            'usage' => 'nullable|string|max:255',
+            'color_name' => 'nullable|string|max:255',
+            'color_type' => 'nullable|string|max:20',
         ]);
+
+        if (empty($data['profile_id'])) {
+            if (empty($data['product_name']) || empty($data['category_code'])) {
+                return response()->json(['message' => 'Product name and category are required for a new product.'], 422);
+            }
+
+            $profile = Profile::create([
+                'profile_id' => $data['product_code'] ?? $this->nextProfileCode(),
+                'category_code' => $data['category_code'],
+                'name' => $data['product_name'],
+                'thickness_mm' => $data['thickness_mm'] ?? null,
+                'weight_kg_per_m' => $data['weight_kg_per_m'] ?? null,
+                'usage' => $data['usage'] ?? null,
+            ]);
+            $data['profile_id'] = $profile->id;
+        }
+
+        if (empty($data['color_code'])) {
+            if (empty($data['color_name'])) {
+                return response()->json(['message' => 'Color is required.'], 422);
+            }
+            $data['color_code'] = $this->nextColorCode();
+        }
+
+        Color::firstOrCreate(
+            ['color_code' => $data['color_code']],
+            [
+                'name' => $data['color_name'] ?? $data['color_code'],
+                'type' => $data['color_type'] ?? null,
+            ]
+        );
 
         $dup = Inventory::where('profile_id', $data['profile_id'])->where('color_code', $data['color_code'])->first();
         if ($dup) {
@@ -104,6 +154,7 @@ class StorehouseController extends Controller
             'profile_id' => $data['profile_id'],
             'color_code' => $data['color_code'],
             'quantity' => $data['quantity'],
+            'unit_price' => $data['unit_price'] ?? null,
         ]);
         $inv->load(['profile.category', 'color']);
 
@@ -116,6 +167,7 @@ class StorehouseController extends Controller
             'profile_id' => 'required|exists:profiles,id',
             'color_code' => 'required|exists:colors,color_code',
             'quantity' => 'required|integer|min:0',
+            'unit_price' => 'nullable|numeric|min:0',
         ]);
 
         $conflict = Inventory::query()
@@ -131,6 +183,7 @@ class StorehouseController extends Controller
         $inventory->profile_id = $data['profile_id'];
         $inventory->color_code = $data['color_code'];
         $inventory->quantity = $data['quantity'];
+        $inventory->unit_price = $data['unit_price'] ?? null;
         $inventory->save();
         $inventory->load(['profile.category', 'color']);
 
@@ -163,5 +216,23 @@ class StorehouseController extends Controller
             'quantity' => (int) $i->quantity,
             'unitPrice' => InventoryPricing::unitPrice($i),
         ];
+    }
+
+    private function nextProfileCode(): string
+    {
+        do {
+            $code = 'CUSTOM-'.strtoupper(substr(uniqid('', true), -8));
+        } while (Profile::query()->where('profile_id', $code)->exists());
+
+        return $code;
+    }
+
+    private function nextColorCode(): string
+    {
+        do {
+            $code = 'CLR-'.strtoupper(substr(uniqid('', true), -6));
+        } while (Color::query()->where('color_code', $code)->exists());
+
+        return $code;
     }
 }

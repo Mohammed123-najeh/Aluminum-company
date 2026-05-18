@@ -87,6 +87,7 @@ export const EmployeeMessages: React.FC<Props> = ({
               {threadSummaries.map((s) => {
                 const id = isInboxSummary(s) ? s.senderId : s.receiverId;
                 const name = isInboxSummary(s) ? s.senderName : (s as ApiMessageThreadSummary).receiverName;
+                const unread = s.unreadCount ?? 0;
                 return (
                   <button
                     key={id}
@@ -99,7 +100,10 @@ export const EmployeeMessages: React.FC<Props> = ({
                     }`}
                   >
                     <p className="text-[10px] font-medium text-slate-400 dark:text-slate-500">{t('from')}</p>
-                    <p className="truncate font-medium text-slate-900 dark:text-slate-100">{name ?? id}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate font-medium text-slate-900 dark:text-slate-100">{name ?? id}</p>
+                      {unread > 0 && <span className="rounded-full bg-indigo-600 px-1.5 py-px text-[10px] font-bold text-white">{unread}</span>}
+                    </div>
                     <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{s.lastPreview}</p>
                   </button>
                 );

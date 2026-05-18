@@ -15,12 +15,16 @@ use Illuminate\Http\Request;
 
 class AdminAnalyticsController extends Controller
 {
+
+
+
     public function index(Request $request)
     {
         $user = $request->user();
         if ($user->role !== 'admin') {
             return response()->json(['message' => 'Forbidden'], 403);
         }
+        
 
         $nonAdmin = User::query()->where('role', '!=', 'admin')->get();
         $supervisors = User::query()->where('role', 'supervisor')->orderBy('name')->get();

@@ -31,6 +31,7 @@ class AdminSeeder extends Seeder
                 'role'     => 'admin',
                 'status'   => 'active',
             ]
+            
         );
     }
 }

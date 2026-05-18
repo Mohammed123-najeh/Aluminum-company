@@ -72,6 +72,16 @@ export function useMessages(otherPartyId: string | null) {
     [token, otherPartyId, fetchThread, fetchSummaries],
   );
 
+  const sendMessageToMany = useCallback(
+    async (receiverIds: string[], body: string) => {
+      if (!token || receiverIds.length === 0) return;
+      await messagesApi.send({ receiver_ids: receiverIds, body }, token);
+      await fetchSummaries();
+      if (otherPartyId) await fetchThread();
+    },
+    [token, otherPartyId, fetchThread, fetchSummaries],
+  );
+
   return {
     thread,
     threadLoading,
@@ -80,6 +90,7 @@ export function useMessages(otherPartyId: string | null) {
     summariesLoading,
     summariesError,
     sendMessage,
+    sendMessageToMany,
     refetchThread: fetchThread,
     refetchSummaries: fetchSummaries,
   };

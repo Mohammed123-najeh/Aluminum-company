@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { ApiCategory, ApiProfile, ApiColor, ApiInventoryItem } from '../services/api';
+import type { ApiCategory, ApiProfile, ApiColor, ApiInventoryItem, CreateInventoryPayload } from '../services/api';
 import { storehouseApi } from '../services/api';
 import { useApp } from '../contexts/AppContext';
 
@@ -46,7 +46,7 @@ export function useStorehouse(categoryCode?: string) {
   }, [fetch]);
 
   const createInventoryItem = useCallback(
-    async (payload: { profile_id: number; color_code: string; quantity: number }) => {
+    async (payload: CreateInventoryPayload) => {
       if (!token) return undefined;
       const created = await storehouseApi.inventoryCreate(payload, token);
       setInventory((prev) =>
@@ -58,7 +58,7 @@ export function useStorehouse(categoryCode?: string) {
   );
 
   const updateInventoryItem = useCallback(
-    async (id: number, payload: { profile_id: number; color_code: string; quantity: number }) => {
+    async (id: number, payload: { profile_id: number; color_code: string; quantity: number; unit_price?: number | null }) => {
       if (!token) return undefined;
       const updated = await storehouseApi.inventoryUpdate(id, payload, token);
       setInventory((prev) => prev.map((i) => (i.id === id ? updated : i)));

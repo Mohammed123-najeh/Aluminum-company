@@ -35,7 +35,19 @@ class ClientController extends Controller
 
         $clients = $query->get();
 
-        return response()->json($clients->map(fn ($c) => $this->clientToArray($c)));
+        // Heal stale orders whose client_id is missing but whose task has a client_id.
+        $this->backfillMissingOrderClientIds($clients->pluck('id')->all());
+
+        // Aggregate per-client totals so the list view shows order count / purchases / balance due
+        // at a glance instead of always rendering zero until the detail panel loads.
+        $analyticsByClient = $this->aggregateAnalyticsForClients($clients->pluck('id')->all());
+
+        return response()->json($clients->map(function (Client $c) use ($analyticsByClient) {
+            $row = $this->clientToArray($c);
+            $row['analytics'] = $analyticsByClient[$c->id] ?? $this->emptyAnalytics();
+
+            return $row;
+        }));
     }
 
     public function store(Request $request)
@@ -70,34 +82,92 @@ class ClientController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $client->loadMissing('supervisor:id,name');
+        $client->loadMissing('supervisor:id,name', 'accountantCreator:id,name');
+
+        // Heal stale orders whose client_id is missing but whose task has a client_id.
+        $this->backfillMissingOrderClientIds([$client->id]);
 
         $orders = Order::query()
             ->where('client_id', $client->id)
-            ->where('status', 'completed')
+            ->with([
+                'items.profile:id,profile_id,name,category_code',
+                'items.profile.category:id,category_code,category_name',
+                'items.color:color_code,name',
+                'payments' => fn ($q) => $q->orderBy('paid_at'),
+                'payments.recorder:id,name',
+                'creator:id,name',
+                'task:id,order_id,title,customer_name',
+            ])
             ->orderByDesc('updated_at')
-            ->get(['id', 'total_amount', 'amount_paid', 'currency', 'receipt_number', 'creator_id', 'updated_at']);
+            ->get();
 
-        $totalPurchases = (float) $orders->sum(fn ($o) => (float) ($o->total_amount ?? 0));
-        $totalPaid = (float) $orders->sum(fn ($o) => (float) ($o->amount_paid ?? 0));
-        $orderCount = $orders->count();
+        // Active orders = anything not cancelled. Draft/in_progress orders represent committed
+        // purchases — show them as outstanding balance so the supervisor can see what is owed
+        // before the order is finalized into a receipt.
+        $activeOrders = $orders->where('status', '!=', 'cancelled');
+        $totalPurchases = (float) $activeOrders->sum(fn ($o) => (float) ($o->total_amount ?? 0));
+        $totalPaid = (float) $activeOrders->sum(fn ($o) => (float) ($o->amount_paid ?? 0));
+        $orderCount = $activeOrders->count();
+        $balanceDue = round(max(0, $totalPurchases - $totalPaid), 2);
+
+        $lastOrderAt = optional($orders->first())->updated_at;
+        $lastPaymentAt = $orders
+            ->flatMap(fn ($o) => $o->payments)
+            ->sortByDesc('paid_at')
+            ->first()
+            ?->paid_at;
+
+        $unitsPurchased = (int) $activeOrders
+            ->flatMap(fn ($o) => $o->items)
+            ->sum(fn ($i) => (int) ($i->quantity ?? 0));
 
         return response()->json([
             'client' => $this->clientToArray($client),
             'analytics' => [
                 'orderCount' => $orderCount,
+                'totalOrderCount' => $orders->count(),
                 'totalPurchases' => round($totalPurchases, 2),
                 'totalPaid' => round($totalPaid, 2),
-                'balanceDue' => round(max(0, $totalPurchases - $totalPaid), 2),
+                'balanceDue' => $balanceDue,
+                'unitsPurchased' => $unitsPurchased,
+                'lastOrderAt' => $lastOrderAt?->toISOString(),
+                'lastPaymentAt' => $lastPaymentAt?->toIso8601String(),
             ],
-            'orders' => $orders->map(fn ($o) => [
-                'id' => (string) $o->id,
-                'receiptNumber' => $o->receipt_number,
-                'totalAmount' => $o->total_amount !== null ? (float) $o->total_amount : null,
-                'amountPaid' => $o->amount_paid !== null ? (float) $o->amount_paid : 0,
-                'currency' => $o->currency ?? 'ILS',
-                'updatedAt' => $o->updated_at->toISOString(),
-            ])->values(),
+            'orders' => $orders->map(function (Order $o) {
+                $total = $o->total_amount !== null ? (float) $o->total_amount : null;
+                $paid = $o->amount_paid !== null ? (float) $o->amount_paid : 0.0;
+
+                return [
+                    'id' => (string) $o->id,
+                    'status' => $o->status,
+                    'receiptNumber' => $o->receipt_number,
+                    'customerReference' => $o->customer_reference,
+                    'totalAmount' => $total,
+                    'amountPaid' => $paid,
+                    'balanceDue' => $total !== null ? round(max(0, $total - $paid), 2) : null,
+                    'paymentStatus' => Order::derivePaymentStatus($total, $paid),
+                    'paymentDueAt' => $o->payment_due_at?->toDateString(),
+                    'paymentNotes' => $o->payment_notes,
+                    'currency' => $o->currency ?? 'ILS',
+                    'createdAt' => $o->created_at->toISOString(),
+                    'updatedAt' => $o->updated_at->toISOString(),
+                    'creatorName' => $o->creator?->name,
+                    'taskTitle' => $o->task?->title,
+                    'items' => $o->items->map(fn ($i) => [
+                        'id' => (string) $i->id,
+                        'profileCode' => $i->profile?->profile_id,
+                        'profileName' => $i->profile?->name,
+                        'categoryName' => $i->profile?->category?->category_name,
+                        'colorCode' => $i->color_code,
+                        'colorName' => $i->color?->name,
+                        'quantity' => (int) $i->quantity,
+                        'unitPrice' => $i->unit_price !== null ? (float) $i->unit_price : null,
+                        'lineTotal' => $i->line_total !== null ? (float) $i->line_total : null,
+                        'notes' => $i->notes,
+                    ])->values(),
+                    'payments' => $o->payments->map(fn ($p) => $p->toApiArray())->values(),
+                ];
+            })->values(),
         ]);
     }
 
@@ -143,9 +213,79 @@ class ClientController extends Controller
         return response()->json(null, 204);
     }
 
+    /**
+     * If a task carries a client_id but the linked order does not, propagate it. This keeps
+     * the client section in sync when a supervisor attaches a client to a task *after* the
+     * draft order was already created (or when an employee created the order without one).
+     *
+     * @param  array<int|string>  $clientIds
+     */
+    private function backfillMissingOrderClientIds(array $clientIds): void
+    {
+        if (empty($clientIds)) {
+            return;
+        }
+        Order::query()
+            ->whereNull('client_id')
+            ->whereHas('task', fn ($q) => $q->whereIn('client_id', $clientIds))
+            ->with('task:id,order_id,client_id')
+            ->get()
+            ->each(function (Order $o) {
+                $cid = $o->task?->client_id;
+                if ($cid) {
+                    $o->client_id = $cid;
+                    $o->save();
+                }
+            });
+    }
+
+    /**
+     * @param  array<int|string>  $clientIds
+     * @return array<string, array<string, mixed>>
+     */
+    private function aggregateAnalyticsForClients(array $clientIds): array
+    {
+        if (empty($clientIds)) {
+            return [];
+        }
+
+        $orders = Order::query()
+            ->whereIn('client_id', $clientIds)
+            ->where('status', '!=', 'cancelled')
+            ->get(['id', 'client_id', 'status', 'total_amount', 'amount_paid', 'updated_at']);
+
+        $result = [];
+        foreach ($orders->groupBy('client_id') as $cid => $group) {
+            $totalPurchases = (float) $group->sum(fn ($o) => (float) ($o->total_amount ?? 0));
+            $totalPaid = (float) $group->sum(fn ($o) => (float) ($o->amount_paid ?? 0));
+            $balanceDue = round(max(0, $totalPurchases - $totalPaid), 2);
+            $last = $group->sortByDesc('updated_at')->first();
+            $result[(string) $cid] = [
+                'orderCount' => $group->count(),
+                'totalPurchases' => round($totalPurchases, 2),
+                'totalPaid' => round($totalPaid, 2),
+                'balanceDue' => $balanceDue,
+                'lastOrderAt' => $last?->updated_at?->toISOString(),
+            ];
+        }
+
+        return $result;
+    }
+
+    private function emptyAnalytics(): array
+    {
+        return [
+            'orderCount' => 0,
+            'totalPurchases' => 0,
+            'totalPaid' => 0,
+            'balanceDue' => 0,
+            'lastOrderAt' => null,
+        ];
+    }
+
     private function canAccessClient(User $user, Client $client): bool
     {
-        if ($user->role === 'admin') {
+        if ($user->role === 'admin' || $user->isAccountant()) {
             return true;
         }
         if ($user->role === 'supervisor' && (int) $client->supervisor_id === (int) $user->id) {
@@ -159,7 +299,9 @@ class ClientController extends Controller
     {
         return [
             'id' => (string) $c->id,
-            'supervisorId' => (string) $c->supervisor_id,
+            'supervisorId' => $c->supervisor_id ? (string) $c->supervisor_id : null,
+            'supervisorName' => $c->relationLoaded('supervisor') ? $c->supervisor?->name : null,
+            'source' => $c->source ?? null,
             'name' => $c->name,
             'phone' => $c->phone,
             'email' => $c->email,

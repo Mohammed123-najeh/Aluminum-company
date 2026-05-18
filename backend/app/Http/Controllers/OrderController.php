@@ -26,7 +26,7 @@ class OrderController extends Controller
             'task:id,title,order_id,customer_name,client_id',
         ]);
 
-        if ($user->role === 'admin') {
+        if ($user->role === 'admin' || $user->isAccountant()) {
             // Admin sees all orders
         } elseif ($user->role === 'supervisor') {
             $query->where(function ($q) use ($user) {
@@ -158,7 +158,7 @@ class OrderController extends Controller
     public function show(Request $request, Order $order)
     {
         $user = $request->user();
-        if ($user->role === 'admin') {
+        if ($user->role === 'admin' || $user->isAccountant()) {
             // OK
         } elseif ($user->role === 'supervisor' && $order->supervisor_id != $user->id && $order->creator_id != $user->id) {
             return response()->json(['message' => 'Forbidden'], 403);
@@ -221,7 +221,8 @@ class OrderController extends Controller
         $user = $request->user();
         $can = $order->creator_id == $user->id
             || ($user->role === 'supervisor' && (int) $order->supervisor_id === (int) $user->id)
-            || $user->role === 'admin';
+            || $user->role === 'admin'
+            || $user->isAccountant();
         if (! $can) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
@@ -285,7 +286,8 @@ class OrderController extends Controller
         $user = $request->user();
         $can = $order->creator_id == $user->id
             || ($user->role === 'supervisor' && (int) $order->supervisor_id === (int) $user->id)
-            || $user->role === 'admin';
+            || $user->role === 'admin'
+            || $user->isAccountant();
         if (! $can) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
@@ -331,7 +333,8 @@ class OrderController extends Controller
         $user = $request->user();
         $can = $order->creator_id == $user->id
             || ($user->role === 'supervisor' && (int) $order->supervisor_id === (int) $user->id)
-            || $user->role === 'admin';
+            || $user->role === 'admin'
+            || $user->isAccountant();
         if (! $can) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
@@ -352,7 +355,7 @@ class OrderController extends Controller
 
     private function userCanViewOrder(User $user, Order $order): bool
     {
-        if ($user->role === 'admin') {
+        if ($user->role === 'admin' || $user->isAccountant()) {
             return true;
         }
         if ($user->role === 'supervisor') {
@@ -397,6 +400,7 @@ class OrderController extends Controller
                 'profileId' => (string) $i->profile_id,
                 'profileCode' => $i->profile?->profile_id,
                 'profileName' => $i->profile?->name,
+                'categoryCode' => $i->profile?->category_code,
                 'categoryName' => $i->profile?->category?->category_name,
                 'colorCode' => $i->color_code,
                 'colorName' => $i->color?->name,

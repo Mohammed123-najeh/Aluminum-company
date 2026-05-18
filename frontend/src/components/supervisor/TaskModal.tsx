@@ -4,7 +4,7 @@ import type { User } from '../../types/user';
 import type { AiTaskTextMode, ApiClient, ApiTask, TaskStatus } from '../../services/api';
 import { aiApi, clientsApi } from '../../services/api';
 import { useOrders } from '../../hooks/useOrders';
-import { StockTaskFulfillmentPanel } from '../shared/StockTaskFulfillmentPanel';
+import { StockTaskFulfillmentPanel, type CatalogScope } from '../shared/StockTaskFulfillmentPanel';
 
 const STATUS_OPTIONS: TaskStatus[] = ['pending', 'in_progress', 'completed', 'cancelled'];
 const STATUS_LABELS: Record<TaskStatus, string> = {
@@ -36,9 +36,12 @@ type Props = {
   task: ApiTask | null;
   onSave: (payload: SavePayload) => Promise<ApiTask | undefined>;
   onClose: () => void;
+  /** When set, the wizard's step-2 catalog opens in this scope (used by the
+   *  "Add Accessory Task" button on SupervisorTasks). Defaults to 'aluminum'. */
+  initialCatalogScope?: CatalogScope;
 };
 
-export const TaskModal: React.FC<Props> = ({ employees, task, onSave, onClose }) => {
+export const TaskModal: React.FC<Props> = ({ employees, task, onSave, onClose, initialCatalogScope = 'aluminum' }) => {
   const { t, token } = useApp();
   const { orders, refetch: refetchOrders } = useOrders();
   const isEdit = Boolean(task);
@@ -65,6 +68,10 @@ export const TaskModal: React.FC<Props> = ({ employees, task, onSave, onClose })
   const [savedNewTask, setSavedNewTask] = useState<ApiTask | null>(null);
   /** Edit task: fullscreen stock overlay. */
   const [editStockOpen, setEditStockOpen] = useState(false);
+  /** Step-2 catalog scope: 'aluminum' (default) or 'accessories'. Lets the supervisor toggle
+   *  between aluminum products and accessory hardware inside the same stock-and-receipt wizard.
+   *  Seeded by the parent so the "Add Accessory Task" entry point can pre-select accessories. */
+  const [catalogScope, setCatalogScope] = useState<CatalogScope>(initialCatalogScope);
 
   useEffect(() => {
     setTitle(task?.title ?? '');
@@ -80,8 +87,9 @@ export const TaskModal: React.FC<Props> = ({ employees, task, onSave, onClose })
     setCreateStep(1);
     setSavedNewTask(null);
     setEditStockOpen(false);
+    setCatalogScope(initialCatalogScope);
     setSaveError(null);
-  }, [task?.id, task]);
+  }, [task?.id, task, initialCatalogScope]);
 
   useEffect(() => {
     if (!token) return;
@@ -172,8 +180,7 @@ export const TaskModal: React.FC<Props> = ({ employees, task, onSave, onClose })
     ...(isEdit ? { status } : {}),
   });
 
-  const handleSaveTaskOnly = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const saveAndContinue = async (nextScope: CatalogScope) => {
     if (!title.trim() || assigneeIds.length === 0) return;
     setSaving(true);
     setSaveError(null);
@@ -185,6 +192,7 @@ export const TaskModal: React.FC<Props> = ({ employees, task, onSave, onClose })
       }
       if (saved) {
         setSavedNewTask(saved);
+        setCatalogScope(nextScope);
         setCreateStep(2);
       }
     } catch (err) {
@@ -192,6 +200,12 @@ export const TaskModal: React.FC<Props> = ({ employees, task, onSave, onClose })
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSaveTaskOnly = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Honor whichever scope the user (or the entry-point button) selected.
+    void saveAndContinue(catalogScope);
   };
 
   const handleSkipStock = () => {
@@ -226,10 +240,41 @@ export const TaskModal: React.FC<Props> = ({ employees, task, onSave, onClose })
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
                   {t('taskWizardStep2Badge')}
                 </p>
-                <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">{t('taskStockFullPageTitle')}</h2>
+                <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                  {catalogScope === 'accessories' ? t('taskAccessoriesFullPageTitle') : t('taskStockFullPageTitle')}
+                </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400">{savedNewTask.title}</p>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex rounded-xl bg-slate-200/80 p-0.5 text-xs font-semibold dark:bg-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setCatalogScope('aluminum')}
+                    className={`rounded-lg px-3 py-1.5 transition ${
+                      catalogScope === 'aluminum'
+                        ? 'bg-white text-indigo-700 shadow dark:bg-slate-900 dark:text-indigo-300'
+                        : 'text-slate-600 hover:text-slate-800 dark:text-slate-300'
+                    }`}
+                    aria-pressed={catalogScope === 'aluminum'}
+                  >
+                    {t('taskScopeAluminum')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCatalogScope('accessories')}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition ${
+                      catalogScope === 'accessories'
+                        ? 'bg-linear-to-r from-indigo-600 to-violet-600 text-white shadow'
+                        : 'text-slate-600 hover:text-slate-800 dark:text-slate-300'
+                    }`}
+                    aria-pressed={catalogScope === 'accessories'}
+                  >
+                    <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
+                    {t('taskAddAccessories')}
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => setCreateStep(1)}
@@ -258,12 +303,13 @@ export const TaskModal: React.FC<Props> = ({ employees, task, onSave, onClose })
             </div>
             <div className="min-h-0 flex-1 overflow-hidden p-3 sm:p-4">
               <StockTaskFulfillmentPanel
-                key={savedNewTask.id}
+                key={`${savedNewTask.id}-${catalogScope}`}
                 variant="fullscreen"
                 mode="supervisor"
                 taskId={savedNewTask.id}
                 taskTitle={stockTaskTitle}
                 receiptCustomerInfo={receiptCustomerInfo}
+                catalogScope={catalogScope}
                 onFulfilled={() => void refetchOrders()}
                 onReceiptDismiss={onClose}
               />
@@ -273,25 +319,59 @@ export const TaskModal: React.FC<Props> = ({ employees, task, onSave, onClose })
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/80">
               <div>
-                <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">{t('taskStockFullPageTitle')}</h2>
+                <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                  {catalogScope === 'accessories' ? t('taskAccessoriesFullPageTitle') : t('taskStockFullPageTitle')}
+                </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400">{task.title}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setEditStockOpen(false)}
-                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-white dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
-              >
-                {t('close')}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex rounded-xl bg-slate-200/80 p-0.5 text-xs font-semibold dark:bg-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setCatalogScope('aluminum')}
+                    className={`rounded-lg px-3 py-1.5 transition ${
+                      catalogScope === 'aluminum'
+                        ? 'bg-white text-indigo-700 shadow dark:bg-slate-900 dark:text-indigo-300'
+                        : 'text-slate-600 hover:text-slate-800 dark:text-slate-300'
+                    }`}
+                    aria-pressed={catalogScope === 'aluminum'}
+                  >
+                    {t('taskScopeAluminum')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCatalogScope('accessories')}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition ${
+                      catalogScope === 'accessories'
+                        ? 'bg-linear-to-r from-indigo-600 to-violet-600 text-white shadow'
+                        : 'text-slate-600 hover:text-slate-800 dark:text-slate-300'
+                    }`}
+                    aria-pressed={catalogScope === 'accessories'}
+                  >
+                    <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
+                    {t('taskAddAccessories')}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditStockOpen(false)}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-white dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  {t('close')}
+                </button>
+              </div>
             </div>
             <div className="min-h-0 flex-1 overflow-hidden p-3 sm:p-4">
               <StockTaskFulfillmentPanel
-                key={`${task.id}-stock`}
+                key={`${task.id}-stock-${catalogScope}`}
                 variant="fullscreen"
                 mode="supervisor"
                 taskId={task.id}
                 taskTitle={stockTaskTitle}
                 receiptCustomerInfo={receiptCustomerInfo}
+                catalogScope={catalogScope}
                 onFulfilled={() => void refetchOrders()}
                 onReceiptDismiss={() => {
                   setEditStockOpen(false);
@@ -583,7 +663,10 @@ export const TaskModal: React.FC<Props> = ({ employees, task, onSave, onClose })
                 {isEdit && (
                   <button
                     type="button"
-                    onClick={() => setEditStockOpen(true)}
+                    onClick={() => {
+                      setCatalogScope(initialCatalogScope);
+                      setEditStockOpen(true);
+                    }}
                     className="order-first w-full rounded-lg border-2 border-indigo-300 bg-indigo-50 py-2.5 text-sm font-semibold text-indigo-800 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-950/70 sm:order-0 sm:w-auto sm:px-4"
                   >
                     {t('taskOpenStockReceipt')}
@@ -605,6 +688,8 @@ export const TaskModal: React.FC<Props> = ({ employees, task, onSave, onClose })
                     <span className="inline-flex h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
                   ) : isEdit ? (
                     t('saveChanges')
+                  ) : initialCatalogScope === 'accessories' ? (
+                    t('taskSaveAndContinueAccessories')
                   ) : (
                     t('taskSaveAndContinueProducts')
                   )}

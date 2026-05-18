@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\LeaveRequest;
+use App\Models\EmployeeDebitRequest;
 use App\Models\SalaryIncreaseRequest;
 use App\Models\User;
 use Carbon\Carbon;
@@ -27,6 +28,7 @@ class HrAnalyticsController extends Controller
             ->where('workflow_step', 'hr')
             ->count();
         $pendingSalary = SalaryIncreaseRequest::where('status', 'pending')->count();
+        $pendingDebit = EmployeeDebitRequest::where('status', 'pending')->count();
 
         $approvedLeaveThisMonth = LeaveRequest::query()
             ->where('status', 'approved')
@@ -83,11 +85,25 @@ class HrAnalyticsController extends Controller
                 'createdAt' => $r->created_at->toISOString(),
             ]);
 
+        $recentDebits = EmployeeDebitRequest::query()
+            ->with('user:id,name')
+            ->orderByDesc('created_at')
+            ->limit(8)
+            ->get()
+            ->map(fn($r) => [
+                'id' => (string) $r->id,
+                'employeeName' => $r->user?->name,
+                'amount' => (float) $r->amount,
+                'status' => $r->status,
+                'createdAt' => $r->created_at->toISOString(),
+            ]);
+
         $directory = $this->buildDirectoryRows();
 
         return response()->json([
             'pendingLeaveRequests'     => $pendingLeave,
             'pendingSalaryRequests'    => $pendingSalary,
+            'pendingDebitRequests'     => $pendingDebit,
             'approvedLeaveCountThisMonth' => $approvedLeaveThisMonth,
             'holidayDaysApprovedThisMonth'=> $holidayDaysApprovedThisMonth,
             'sickDaysApprovedThisMonth'   => $sickDaysApprovedThisMonth,
@@ -95,6 +111,7 @@ class HrAnalyticsController extends Controller
             'activeEmployeesCount'     => $employeesWithLeave,
             'averageBaseSalary'        => $avgSalary !== null ? round((float) $avgSalary, 2) : null,
             'recentLeaveActivity'      => $recentLeave,
+            'recentDebitActivity'      => $recentDebits,
             'directory'                => $directory,
         ]);
     }

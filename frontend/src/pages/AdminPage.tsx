@@ -12,6 +12,7 @@ import { AdminMessages } from '../components/admin/AdminMessages';
 import { AdminAnalytics } from '../components/admin/AdminAnalytics';
 import { AdminFinancialAnalytics } from '../components/admin/AdminFinancialAnalytics';
 import { AdminApprovalCenter } from '../components/admin/AdminApprovalCenter';
+import { AdminPayrollPanel } from '../components/admin/AdminPayrollPanel';
 import { NotificationBell } from '../components/notifications/NotificationBell';
 import { NotificationsPanel } from '../components/notifications/NotificationsPanel';
 import { useNotifications } from '../hooks/useNotifications';
@@ -19,7 +20,7 @@ import { useMessages } from '../hooks/useMessages';
 import type { User, CreateUserInput, UpdateUserInput } from '../types/user';
 import { adminApprovalsApi } from '../services/api';
 
-type View = 'users' | 'orgchart' | 'analytics' | 'financial' | 'approvals' | 'messages' | 'assistant' | 'notifications';
+type View = 'users' | 'orgchart' | 'analytics' | 'financial' | 'payroll' | 'approvals' | 'messages' | 'assistant' | 'notifications';
 
 const NavItem: React.FC<{
   label: string;
@@ -204,6 +205,17 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
           />
 
           <NavItem
+            label={t('adminPayrollNav')}
+            active={view === 'payroll'}
+            onClick={() => goView('payroll')}
+            icon={
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4v.01" />
+                <circle cx="12" cy="12" r="9" />
+              </svg>
+            }
+          />
+          <NavItem
             label={t('adminApprovalsNav')}
             active={view === 'approvals'}
             onClick={() => goView('approvals')}
@@ -323,6 +335,7 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
               {view === 'orgchart' && t('orgChart')}
               {view === 'analytics' && t('adminAnalytics')}
               {view === 'financial' && t('adminFinancialDashboardTitle')}
+              {view === 'payroll' && t('adminPayrollTitle')}
               {view === 'approvals' && t('adminApprovalsTitle')}
               {view === 'messages' && t('messages')}
               {view === 'assistant' && t('aiAssistantNav')}
@@ -404,6 +417,17 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
               </button>
               <button
                 type="button"
+                onClick={() => goView('payroll')}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                  view === 'payroll'
+                    ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                {t('adminPayrollNav')}
+              </button>
+              <button
+                type="button"
                 onClick={() => goView('approvals')}
                 className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
                   view === 'approvals'
@@ -468,7 +492,7 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
             {/* Create Account */}
             <button
               onClick={() => setShowCreate(true)}
-              className={`inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-indigo-500 to-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/25 transition hover:from-indigo-400 hover:to-blue-500 ${view === 'assistant' || view === 'notifications' || view === 'messages' || view === 'analytics' || view === 'financial' || view === 'approvals' ? 'hidden' : ''}`}
+              className={`inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-indigo-500 to-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/25 transition hover:from-indigo-400 hover:to-blue-500 ${view === 'assistant' || view === 'notifications' || view === 'messages' || view === 'analytics' || view === 'financial' || view === 'approvals' || view === 'payroll' ? 'hidden' : ''}`}
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -486,6 +510,8 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
             <AdminAnalytics />
           ) : view === 'financial' ? (
             <AdminFinancialAnalytics />
+          ) : view === 'payroll' ? (
+            <AdminPayrollPanel />
           ) : view === 'approvals' ? (
             <AdminApprovalCenter onCountsMayHaveChanged={refreshApprovalCounts} />
           ) : usersLoading ? (

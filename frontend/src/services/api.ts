@@ -88,6 +88,7 @@ export type ApiUser = {
   employeeType?: 'accountant' | 'sales' | 'hr' | null;
   mainJob?: string | null;
   baseSalary?: string | null;
+  hourlyRate?: string | null;
   annualLeaveBalance?: string | null;
   supervisorId?: string | null;
   status: 'active' | 'suspended';
@@ -105,6 +106,23 @@ export const auth = {
     request<{ message: string }>('POST', '/logout', undefined, token),
 
   me: (token: string) => request<ApiUser>('GET', '/me', undefined, token),
+
+  /** Request a 6-digit reset code by email. Always resolves with a generic message. */
+  forgotPassword: (email: string) =>
+    request<{ message: string; expiresInMinutes: number }>('POST', '/password/forgot', { email }),
+
+  /** Check whether a code is currently valid (without consuming it). */
+  verifyPasswordCode: (email: string, code: string) =>
+    request<{ ok: true }>('POST', '/password/verify', { email, code }),
+
+  /** Consume the code and set a new password. */
+  resetPassword: (email: string, code: string, password: string, passwordConfirmation: string) =>
+    request<{ message: string }>('POST', '/password/reset', {
+      email,
+      code,
+      password,
+      password_confirmation: passwordConfirmation,
+    }),
 };
 
 // ── In-app notifications ─────────────────────────────────────────────────────
@@ -146,6 +164,7 @@ export type CreateUserPayload = {
   main_job?: string | null;
   supervisor_id?: string | null;
   base_salary?: number | null;
+  hourly_rate?: number | null;
   annual_leave_balance?: number | null;
 };
 
@@ -158,6 +177,7 @@ export type UpdateUserPayload = {
   supervisor_id?: string | null;
   status?: 'active' | 'suspended';
   base_salary?: number | null;
+  hourly_rate?: number | null;
   annual_leave_balance?: number | null;
 };
 
@@ -205,22 +225,30 @@ export type ApiMessage = {
 
 export type ApiMessageThreadSummary = {
   id: string;
+  peerId: string;
+  peerName: string | null;
+  peerRole?: string | null;
   receiverId: string;
   receiverName: string | null;
   lastPreview: string;
   lastAt: string;
+  unreadCount?: number;
 };
 
 /** Employee inbox: threads grouped by sender (supervisor) */
 export type ApiMessageInboxSummary = {
   id: string;
+  peerId: string;
+  peerName: string | null;
+  peerRole?: string | null;
   senderId: string;
   senderName: string | null;
   lastPreview: string;
   lastAt: string;
+  unreadCount?: number;
 };
 
-export type CreateMessagePayload = { receiver_id: string; body: string; task_id?: string | null };
+export type CreateMessagePayload = { receiver_id?: string; receiver_ids?: string[]; body: string; task_id?: string | null };
 
 export const messagesApi = {
   list: (token: string, receiverId?: string) =>
@@ -232,13 +260,14 @@ export const messagesApi = {
     ),
   send: (payload: CreateMessagePayload, token: string) => {
     const body: Record<string, unknown> = {
-      receiver_id: payload.receiver_id,
       body: payload.body,
     };
+    if (payload.receiver_id) body.receiver_id = payload.receiver_id;
+    if (payload.receiver_ids) body.receiver_ids = payload.receiver_ids;
     if (payload.task_id) {
       body.task_id = payload.task_id;
     }
-    return request<ApiMessage>('POST', '/messages', body, token);
+    return request<ApiMessage | ApiMessage[]>('POST', '/messages', body, token);
   },
 };
 
@@ -251,6 +280,7 @@ export type ApiTaskAssignee = { id: string; name: string; email: string };
 export type ApiTaskOrderItem = {
   profileCode: string;
   profileName: string;
+  categoryCode?: string | null;
   categoryName?: string | null;
   colorCode: string;
   colorName: string;
@@ -505,6 +535,21 @@ export type ApiInventoryItem = {
   unitPrice?: number | null;
 };
 
+export type CreateInventoryPayload = {
+  profile_id?: number | null;
+  color_code?: string | null;
+  quantity: number;
+  unit_price?: number | null;
+  product_code?: string | null;
+  product_name?: string | null;
+  category_code?: string | null;
+  thickness_mm?: number | null;
+  weight_kg_per_m?: number | null;
+  usage?: string | null;
+  color_name?: string | null;
+  color_type?: string | null;
+};
+
 export const storehouseApi = {
   categories: (token: string) =>
     request<ApiCategory[]>('GET', '/storehouse/categories', undefined, token),
@@ -526,13 +571,11 @@ export const storehouseApi = {
     const q = search.toString();
     return request<ApiInventoryItem[]>('GET', q ? `/storehouse/inventory?${q}` : '/storehouse/inventory', undefined, token);
   },
-  inventoryCreate: (
-    payload: { profile_id: number; color_code: string; quantity: number },
-    token: string,
-  ) => request<ApiInventoryItem>('POST', '/storehouse/inventory', payload, token),
+  inventoryCreate: (payload: CreateInventoryPayload, token: string) =>
+    request<ApiInventoryItem>('POST', '/storehouse/inventory', payload, token),
   inventoryUpdate: (
     id: number,
-    payload: { profile_id: number; color_code: string; quantity: number },
+    payload: { profile_id: number; color_code: string; quantity: number; unit_price?: number | null },
     token: string,
   ) => request<ApiInventoryItem>('PATCH', `/storehouse/inventory/${id}`, payload, token),
   inventoryDelete: (id: number, token: string) =>
@@ -546,6 +589,7 @@ export type ApiOrderItem = {
   profileId: string;
   profileCode: string;
   profileName: string;
+  categoryCode?: string | null;
   categoryName?: string | null;
   colorCode: string;
   colorName: string;
@@ -770,33 +814,85 @@ export const ordersApi = {
 
 // ── Clients (supervisor) ────────────────────────────────────────────────────
 
+export type ApiClientListAnalytics = {
+  orderCount: number;
+  totalPurchases: number;
+  totalPaid: number;
+  balanceDue: number;
+  lastOrderAt: string | null;
+};
+
 export type ApiClient = {
   id: string;
-  supervisorId: string;
+  supervisorId: string | null;
+  supervisorName?: string | null;
+  source?: string | null;
   name: string;
   phone: string | null;
   email: string | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Present on the list endpoint; absent on the detail endpoint's client object. */
+  analytics?: ApiClientListAnalytics;
+};
+
+export type ApiClientOrderItem = {
+  id: string;
+  profileCode: string | null;
+  profileName: string | null;
+  categoryName: string | null;
+  colorCode: string | null;
+  colorName: string | null;
+  quantity: number;
+  unitPrice: number | null;
+  lineTotal: number | null;
+  notes: string | null;
+};
+
+export type ApiClientOrderPayment = {
+  id: string;
+  amount: number;
+  paidAt: string;
+  recordedById: string | null;
+  recordedByName?: string | null;
+  note: string | null;
+  createdAt: string;
+};
+
+export type ApiClientOrder = {
+  id: string;
+  status: string;
+  receiptNumber: string | null;
+  customerReference: string | null;
+  totalAmount: number | null;
+  amountPaid: number;
+  balanceDue: number | null;
+  paymentStatus: 'paid' | 'partial' | 'unpaid' | 'unknown';
+  paymentDueAt: string | null;
+  paymentNotes: string | null;
+  currency: string;
+  createdAt: string;
+  updatedAt: string;
+  creatorName?: string | null;
+  taskTitle?: string | null;
+  items: ApiClientOrderItem[];
+  payments: ApiClientOrderPayment[];
 };
 
 export type ApiClientDetailResponse = {
   client: ApiClient;
   analytics: {
     orderCount: number;
+    totalOrderCount: number;
     totalPurchases: number;
     totalPaid: number;
     balanceDue: number;
+    unitsPurchased: number;
+    lastOrderAt: string | null;
+    lastPaymentAt: string | null;
   };
-  orders: Array<{
-    id: string;
-    receiptNumber: string | null;
-    totalAmount: number | null;
-    amountPaid: number;
-    currency: string;
-    updatedAt: string;
-  }>;
+  orders: ApiClientOrder[];
 };
 
 export const clientsApi = {
@@ -878,6 +974,7 @@ export type ApiHrDirectoryRow = {
 export type ApiHrAnalytics = {
   pendingLeaveRequests: number;
   pendingSalaryRequests: number;
+  pendingDebitRequests?: number;
   approvedLeaveCountThisMonth: number;
   holidayDaysApprovedThisMonth: number;
   sickDaysApprovedThisMonth: number;
@@ -892,7 +989,29 @@ export type ApiHrAnalytics = {
     status: string;
     createdAt: string;
   }>;
+  recentDebitActivity?: Array<{
+    id: string;
+    employeeName?: string | null;
+    amount: number;
+    status: string;
+    createdAt: string;
+  }>;
   directory: ApiHrDirectoryRow[];
+};
+
+export type ApiDebitRequest = {
+  id: string;
+  userId: string;
+  userName?: string | null;
+  userEmail?: string | null;
+  amount: string;
+  reason?: string | null;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  decidedById?: string | null;
+  decidedByName?: string | null;
+  decidedAt?: string | null;
+  decisionNote?: string | null;
+  createdAt: string;
 };
 
 export type ApiHrEmployeeDetail = {
@@ -971,6 +1090,29 @@ export const salaryRequestsApi = {
     request<ApiSalaryRequest>('PATCH', `/salary-requests/${id}/cancel`, {}, token),
 };
 
+export const debitRequestsApi = {
+  mine: (token: string) => request<ApiDebitRequest[]>('GET', '/debit-requests/mine', undefined, token),
+
+  listHr: (token: string, qs?: { status?: string }) => {
+    const p = new URLSearchParams();
+    if (qs?.status) p.set('status', qs.status);
+    const q = p.toString() ? `?${p.toString()}` : '';
+    return request<ApiDebitRequest[]>('GET', `/debit-requests${q}`, undefined, token);
+  },
+
+  create: (token: string, body: { amount: number; reason?: string | null }) =>
+    request<ApiDebitRequest>('POST', '/debit-requests', body, token),
+
+  decide: (
+    token: string,
+    id: string,
+    body: { status: 'approved' | 'rejected'; decision_note?: string | null },
+  ) => request<ApiDebitRequest>('PATCH', `/debit-requests/${id}/decide`, body, token),
+
+  cancel: (token: string, id: string) =>
+    request<ApiDebitRequest>('PATCH', `/debit-requests/${id}/cancel`, {}, token),
+};
+
 export const hrAnalyticsApi = {
   get: (token: string) => request<ApiHrAnalytics>('GET', '/hr/analytics', undefined, token),
 
@@ -993,9 +1135,153 @@ export type ApiAccountantCashFlow = {
   generatedAt: string;
 };
 
+export type ApiAccountantOverview = {
+  generatedAt: string;
+  totals: { count: number; totalBilled: number; totalPaid: number; totalOutstanding: number };
+  byPaymentStatus: Record<string, number>;
+  overdueCount: number;
+  overdueOutstanding: number;
+  clientsCount: number;
+  receiptsCount: number;
+  topOutstandingCustomers: Array<{ customerLabel: string; receiptCount: number; outstanding: number }>;
+};
+
+export type ApiAccountantClient = {
+  id: string;
+  supervisorId?: string | null;
+  supervisorName?: string | null;
+  source?: string | null;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  notes: string | null;
+  orderCount: number;
+  totalPurchases: number;
+  totalPaid: number;
+  balanceDue: number;
+  lastPaymentAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type ApiAccountantManualReceipt = {
+  id: string;
+  receiptNumber: string | null;
+  clientId: string | null;
+  clientName: string | null;
+  customerReference: string | null;
+  totalAmount: number | null;
+  amountPaid: number | null;
+  balanceDue: number | null;
+  paymentStatus: string;
+  paymentDueAt: string | null;
+  paymentNotes: string | null;
+  currency: string;
+  items: Array<{ id: string; description: string | null; quantity: number; unitPrice: number | null; lineTotal: number | null }>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ApiAccountantAgingOrder = {
+  id: string;
+  receiptNumber: string | null;
+  clientId: string | null;
+  clientName: string | null;
+  totalAmount: number;
+  amountPaid: number;
+  balanceDue: number;
+  paymentDueAt: string | null;
+  daysOverdue: number;
+  paymentStatus: 'paid' | 'partial' | 'unpaid' | 'unknown';
+  updatedAt: string;
+};
+
+export type ApiAccountantAgingBucket = {
+  key: 'notDue' | 'd0_30' | 'd31_60' | 'd61_90' | 'd90_plus';
+  label: string;
+  min: number | null;
+  max: number | null;
+  count: number;
+  outstanding: number;
+  orders: ApiAccountantAgingOrder[];
+};
+
+export type ApiAccountantAging = {
+  generatedAt: string;
+  buckets: ApiAccountantAgingBucket[];
+  totals: { count: number; outstanding: number };
+};
+
+export type ApiAccountantTrend = {
+  generatedAt: string;
+  months: number;
+  series: Array<{ month: string; billed: number; collected: number }>;
+};
+
+export type ApiAccountantDebitRow = {
+  id: string;
+  userId: string;
+  userName: string | null;
+  userEmail: string | null;
+  amount: string;
+  reason: string | null;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  decidedById: string | null;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  createdAt: string;
+};
+
+export type ApiAccountantDebits = {
+  generatedAt: string;
+  totals: Record<'pending' | 'approved' | 'rejected' | 'cancelled', { count: number; amount: number }>;
+  rows: ApiAccountantDebitRow[];
+};
+
 export const accountantFinanceApi = {
+  overview: (token: string) =>
+    request<ApiAccountantOverview>('GET', '/accountant/overview', undefined, token),
+
   cashFlow: (token: string, period: 'day' | 'week' | 'month' | 'year') =>
     request<ApiAccountantCashFlow>('GET', `/accountant/cash-flow?period=${encodeURIComponent(period)}`, undefined, token),
+
+  aging: (token: string) =>
+    request<ApiAccountantAging>('GET', '/accountant/aging', undefined, token),
+
+  trend: (token: string, months = 6) =>
+    request<ApiAccountantTrend>('GET', `/accountant/trend?months=${months}`, undefined, token),
+
+  debits: (token: string) =>
+    request<ApiAccountantDebits>('GET', '/accountant/debits', undefined, token),
+
+  clients: (token: string, q?: string) => {
+    const search = q && q.trim() ? `?q=${encodeURIComponent(q.trim())}` : '';
+    return request<ApiAccountantClient[]>('GET', `/accountant/clients${search}`, undefined, token);
+  },
+
+  createClient: (
+    token: string,
+    body: { name: string; phone?: string | null; email?: string | null; notes?: string | null },
+  ) => request<ApiAccountantClient>('POST', '/accountant/clients', body, token),
+
+  updateClient: (
+    token: string,
+    id: string,
+    body: { name?: string; phone?: string | null; email?: string | null; notes?: string | null },
+  ) => request<ApiAccountantClient>('PATCH', `/accountant/clients/${id}`, body, token),
+
+  manualReceipt: (
+    token: string,
+    body: {
+      client_id: string;
+      customer_reference?: string | null;
+      items: Array<{ description: string; quantity: number; unit_price: number }>;
+      amount_paid?: number;
+      payment_due_at?: string | null;
+      payment_notes?: string | null;
+    },
+  ) => request<ApiAccountantManualReceipt>('POST', '/accountant/manual-receipts', body, token),
 
   publishReport: (token: string, body: { period: string; note?: string | null }) =>
     request<ApiAdminSubmission>('POST', '/accountant/publish-report', body, token),
@@ -1100,4 +1386,57 @@ export const submissionsApi = {
 
   downloadAttachment: (token: string, submissionId: string) =>
     downloadBlob(`/submissions/${submissionId}/attachment`, token, `submission-${submissionId}.pdf`),
+};
+
+// ── Attendance / payroll ────────────────────────────────────────────────────
+
+export type ApiAttendanceLog = {
+  id: string;
+  userId: string;
+  userName?: string | null;
+  clockInAt: string | null;
+  clockOutAt: string | null;
+  minutesWorked: number | null;
+  hoursWorked: number | null;
+  ipAddress: string | null;
+};
+
+export type ApiPayrollRow = {
+  userId: string;
+  userName: string;
+  role: 'admin' | 'supervisor' | 'employee';
+  employeeType: string | null;
+  supervisorId: string | null;
+  baseSalary: number | null;
+  hourlyRate: number | null;
+  totalMinutes: number;
+  totalHours: number;
+  computedEarnings: number | null;
+  sessionsCount: number;
+  lastClockInAt: string | null;
+  lastClockOutAt: string | null;
+};
+
+export type ApiPayrollSummary = {
+  from: string;
+  to: string;
+  rows: ApiPayrollRow[];
+};
+
+export const attendanceApi = {
+  list: (token: string, opts?: { userId?: string; from?: string; to?: string }) => {
+    const qs = new URLSearchParams();
+    if (opts?.userId) qs.set('user_id', opts.userId);
+    if (opts?.from) qs.set('from', opts.from);
+    if (opts?.to) qs.set('to', opts.to);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return request<ApiAttendanceLog[]>('GET', `/attendance${suffix}`, undefined, token);
+  },
+  summary: (token: string, opts?: { from?: string; to?: string }) => {
+    const qs = new URLSearchParams();
+    if (opts?.from) qs.set('from', opts.from);
+    if (opts?.to) qs.set('to', opts.to);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return request<ApiPayrollSummary>('GET', `/attendance/summary${suffix}`, undefined, token);
+  },
 };

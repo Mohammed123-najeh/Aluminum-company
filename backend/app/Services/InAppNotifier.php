@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AdminSubmission;
+use App\Models\EmployeeDebitRequest;
 use App\Models\LeaveRequest;
 use App\Models\Message;
 use App\Models\SalaryIncreaseRequest;
@@ -213,6 +214,37 @@ class InAppNotifier
             'body' => 'Your salary review was '.$row->status.'.',
             'data' => [
                 'salaryRequestId' => (string) $row->id,
+            ],
+        ]);
+    }
+
+    public static function debitRequestSubmitted(EmployeeDebitRequest $row): void
+    {
+        $row->loadMissing('user:id,name');
+        $name = $row->user?->name ?? 'Employee';
+        foreach (User::hrRecipients()->get() as $hr) {
+            UserNotification::create([
+                'user_id' => $hr->id,
+                'type' => UserNotification::TYPE_HR_DEBIT_PENDING,
+                'title' => 'Salary advance request',
+                'body' => $name.' requested a salary advance.',
+                'data' => [
+                    'debitRequestId' => (string) $row->id,
+                    'employeeId' => (string) $row->user_id,
+                ],
+            ]);
+        }
+    }
+
+    public static function debitRequestDecided(User $employee, EmployeeDebitRequest $row): void
+    {
+        UserNotification::create([
+            'user_id' => $employee->id,
+            'type' => UserNotification::TYPE_HR_DEBIT_DECIDED,
+            'title' => 'Salary advance '.$row->status,
+            'body' => 'Your salary advance request was '.$row->status.'.',
+            'data' => [
+                'debitRequestId' => (string) $row->id,
             ],
         ]);
     }

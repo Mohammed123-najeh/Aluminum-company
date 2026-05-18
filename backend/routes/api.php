@@ -11,6 +11,7 @@ use App\Http\Controllers\StorehouseController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\AdminAnalyticsController;
+use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\HrAnalyticsController;
 use App\Http\Controllers\LeaveRequestController;
 use App\Http\Controllers\ReceiptPaymentAnalyticsController;
@@ -19,6 +20,7 @@ use App\Http\Controllers\SalesTaskFulfillmentController;
 use App\Http\Controllers\AccountantFinanceController;
 use App\Http\Controllers\AdminSubmissionController;
 use App\Http\Controllers\AdminApprovalsController;
+use App\Http\Controllers\EmployeeDebitRequestController;
 use Illuminate\Support\Facades\Route;
 
 // Public login is registered in bootstrap/app.php (then) as POST /api/login.
@@ -76,10 +78,21 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/users/{user}/toggle-status', [UserController::class, 'toggleStatus']);
     Route::patch('/users/{user}/assign-supervisor', [UserController::class, 'assignSupervisor']);
 
+    Route::get('/attendance', [AttendanceController::class, 'index']);
+    Route::get('/attendance/summary', [AttendanceController::class, 'summary']);
+
     Route::get('/admin/analytics', [AdminAnalyticsController::class, 'index']);
     Route::get('/receipt-payment-analytics', [ReceiptPaymentAnalyticsController::class, 'index']);
 
     Route::get('/accountant/cash-flow', [AccountantFinanceController::class, 'cashFlow']);
+    Route::get('/accountant/overview', [AccountantFinanceController::class, 'overview']);
+    Route::get('/accountant/aging', [AccountantFinanceController::class, 'aging']);
+    Route::get('/accountant/trend', [AccountantFinanceController::class, 'trend']);
+    Route::get('/accountant/debits', [AccountantFinanceController::class, 'debits']);
+    Route::get('/accountant/clients', [AccountantFinanceController::class, 'clients']);
+    Route::post('/accountant/clients', [AccountantFinanceController::class, 'storeClient']);
+    Route::patch('/accountant/clients/{client}', [AccountantFinanceController::class, 'updateClient']);
+    Route::post('/accountant/manual-receipts', [AccountantFinanceController::class, 'manualReceipt']);
     Route::get('/accountant/receipt-report.pdf', [AccountantFinanceController::class, 'receiptReportPdf']);
     Route::post('/accountant/publish-report', [AccountantFinanceController::class, 'publishReport']);
 
@@ -106,6 +119,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/salary-requests', [SalaryIncreaseRequestController::class, 'store']);
     Route::patch('/salary-requests/{salaryIncreaseRequest}/decide', [SalaryIncreaseRequestController::class, 'decide']);
     Route::patch('/salary-requests/{salaryIncreaseRequest}/cancel', [SalaryIncreaseRequestController::class, 'cancel']);
+
+    Route::get('/debit-requests/mine', [EmployeeDebitRequestController::class, 'mine']);
+    Route::get('/debit-requests', [EmployeeDebitRequestController::class, 'index']);
+    Route::post('/debit-requests', [EmployeeDebitRequestController::class, 'store']);
+    Route::patch('/debit-requests/{debitRequest}/decide', [EmployeeDebitRequestController::class, 'decide']);
+    Route::patch('/debit-requests/{debitRequest}/cancel', [EmployeeDebitRequestController::class, 'cancel']);
 
     Route::get('/sales/inventory-offers', [SalesTaskFulfillmentController::class, 'inventoryOffers']);
     Route::post('/sales/fulfill-task', [SalesTaskFulfillmentController::class, 'fulfill']);

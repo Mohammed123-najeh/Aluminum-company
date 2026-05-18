@@ -3,6 +3,7 @@ import { useApp } from '../../contexts/AppContext';
 import type { User } from '../../types/user';
 import type { ApiTask, TaskStatus } from '../../services/api';
 import { TaskModal } from './TaskModal';
+import { CustomOrderModal } from './CustomOrderModal';
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   pending: 'taskStatusPending',
@@ -58,6 +59,9 @@ export const SupervisorTasks: React.FC<Props> = ({
 }) => {
   const { t } = useApp();
   const [showModal, setShowModal] = useState(false);
+  /** When true, the TaskModal opens directly in the accessories flow (Step-2 catalog scoped to ACCESSORIES). */
+  const [showAccessoryFlow, setShowAccessoryFlow] = useState(false);
+  const [showCustomOrder, setShowCustomOrder] = useState(false);
   const [editTask, setEditTask] = useState<ApiTask | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('');
@@ -104,6 +108,7 @@ export const SupervisorTasks: React.FC<Props> = ({
   const closeModal = () => {
     void refetchTasks?.();
     setShowModal(false);
+    setShowAccessoryFlow(false);
     setEditTask(null);
   };
 
@@ -161,15 +166,35 @@ export const SupervisorTasks: React.FC<Props> = ({
             ))}
           </select>
         </div>
-        <button
-          onClick={() => { setEditTask(null); setShowModal(true); }}
-          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
-        >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
-          {t('addTask')}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setShowCustomOrder(true)}
+            className="inline-flex items-center gap-2 rounded-lg bg-linear-to-r from-violet-600 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-fuchsia-500/25 transition hover:from-violet-500 hover:to-fuchsia-400"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.847.813a4.5 4.5 0 0 0-3.09 3.091ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" />
+            </svg>
+            {t('customOrderButton')}
+          </button>
+          <button
+            onClick={() => { setEditTask(null); setShowAccessoryFlow(true); }}
+            className="inline-flex items-center gap-2 rounded-lg bg-linear-to-r from-amber-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-orange-500/25 transition hover:from-amber-400 hover:to-orange-400"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+            </svg>
+            {t('addAccessoryTaskButton')}
+          </button>
+          <button
+            onClick={() => { setEditTask(null); setShowModal(true); }}
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            {t('addTask')}
+          </button>
+        </div>
       </div>
 
       {filteredTasks.length === 0 ? (
@@ -257,12 +282,24 @@ export const SupervisorTasks: React.FC<Props> = ({
         </div>
       )}
 
-      {(showModal || editTask) && (
+      {(showModal || showAccessoryFlow || editTask) && (
         <TaskModal
           employees={employees}
           task={editTask}
           onSave={editTask ? (p) => handleUpdate(editTask.id, p) : handleCreate}
           onClose={closeModal}
+          initialCatalogScope={showAccessoryFlow ? 'accessories' : 'aluminum'}
+        />
+      )}
+
+      {showCustomOrder && (
+        <CustomOrderModal
+          employees={employees}
+          onSave={handleCreate}
+          onClose={() => {
+            void refetchTasks?.();
+            setShowCustomOrder(false);
+          }}
         />
       )}
     </div>

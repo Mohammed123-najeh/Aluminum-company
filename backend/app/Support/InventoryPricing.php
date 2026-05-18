@@ -11,6 +11,10 @@ class InventoryPricing
 {
     public static function unitPrice(Inventory $inv): float
     {
+        if ($inv->unit_price !== null) {
+            return round((float) $inv->unit_price, 2);
+        }
+
         $hash = crc32((string) $inv->id.'|'.$inv->color_code.'|'.$inv->profile_id);
         $base = 45 + ($hash % 220);
 

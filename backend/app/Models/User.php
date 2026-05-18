@@ -20,6 +20,7 @@ class User extends Authenticatable
         'employee_type',
         'main_job',
         'base_salary',
+        'hourly_rate',
         'annual_leave_balance',
         'supervisor_id',
         'status',
@@ -38,6 +39,7 @@ class User extends Authenticatable
             'last_login_at'         => 'datetime',
             'password'              => 'hashed',
             'base_salary'           => 'decimal:2',
+            'hourly_rate'           => 'decimal:2',
             'annual_leave_balance'  => 'decimal:1',
         ];
     }
@@ -103,6 +105,7 @@ class User extends Authenticatable
             'employeeType'         => $this->employee_type,
             'mainJob'              => $this->main_job,
             'baseSalary'           => $this->base_salary !== null ? (string) $this->base_salary : null,
+            'hourlyRate'           => $this->hourly_rate !== null ? (string) $this->hourly_rate : null,
             'annualLeaveBalance'   => $this->annual_leave_balance !== null ? (string) $this->annual_leave_balance : null,
             'supervisorId'         => $this->supervisor_id ? (string) $this->supervisor_id : null,
             'status'               => $this->status,

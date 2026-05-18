@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import type { User } from '../../types/user';
 import type { ApiMessage, ApiTask } from '../../services/api';
+import { usersApi } from '../../services/api';
 import type { MessageThreadSummary } from '../../hooks/useMessages';
 
 type Props = {
@@ -15,6 +16,7 @@ type Props = {
   threadSummaries: MessageThreadSummary[];
   summariesLoading: boolean;
   sendMessage: (body: string, taskId?: string | null) => Promise<void>;
+  sendMessageToMany?: (receiverIds: string[], body: string) => Promise<void>;
 };
 
 export const SupervisorMessages: React.FC<Props> = ({
@@ -28,44 +30,67 @@ export const SupervisorMessages: React.FC<Props> = ({
   threadSummaries,
   summariesLoading,
   sendMessage,
+  sendMessageToMany,
 }) => {
-  const { t } = useApp();
+  const { t, token } = useApp();
   const [body, setBody] = useState('');
   const [replyTaskId, setReplyTaskId] = useState<string>('');
   const [sending, setSending] = useState(false);
+  const [primaryAdmin, setPrimaryAdmin] = useState<User | null>(null);
+  const [broadcastMode, setBroadcastMode] = useState(false);
 
-  const sortedEmployees = useMemo(
-    () => [...employees].sort((a, b) => a.name.localeCompare(b.name)),
-    [employees],
-  );
+  useEffect(() => {
+    if (!token) return;
+    usersApi
+      .list(token)
+      .then((rows) => setPrimaryAdmin((rows.find((u) => u.role === 'admin' && u.status === 'active') as User | undefined) ?? null))
+      .catch(() => setPrimaryAdmin(null));
+  }, [token]);
+
+  const summaryFor = (peerId: string) => threadSummaries.find((x) => x.peerId === peerId || ('receiverId' in x && x.receiverId === peerId));
+
+  const sortedEmployees = useMemo(() => {
+    return [...employees].sort((a, b) => {
+      const atA = summaryFor(a.id)?.lastAt ?? '';
+      const atB = summaryFor(b.id)?.lastAt ?? '';
+      if (atA || atB) return atB.localeCompare(atA);
+      return a.name.localeCompare(b.name);
+    });
+  }, [employees, threadSummaries]);
 
   const employeeTasks = useMemo(
     () =>
-      selectedReceiverId
+      selectedReceiverId && !broadcastMode
         ? tasks.filter((task) => task.assignees.some((a) => a.id === selectedReceiverId))
         : [],
-    [tasks, selectedReceiverId],
+    [tasks, selectedReceiverId, broadcastMode],
   );
 
   const selectedEmployee = selectedReceiverId ? employees.find((e) => e.id === selectedReceiverId) : null;
+  const selectedAdmin = selectedReceiverId && primaryAdmin?.id === selectedReceiverId ? primaryAdmin : null;
 
   const previewFor = (empId: string) => {
-    const s = threadSummaries.find((x) => 'receiverId' in x && x.receiverId === empId);
+    const s = summaryFor(empId);
     return s?.lastPreview ?? null;
   };
+  const unreadFor = (peerId: string) => summaryFor(peerId)?.unreadCount ?? 0;
 
   useEffect(() => {
     setReplyTaskId('');
     setBody('');
-  }, [selectedReceiverId]);
+  }, [selectedReceiverId, broadcastMode]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = body.trim();
-    if (!text || !selectedReceiverId) return;
+    if (!text || (!selectedReceiverId && !broadcastMode)) return;
     setSending(true);
     try {
-      await sendMessage(text, replyTaskId || undefined);
+      if (broadcastMode) {
+        await sendMessageToMany?.(employees.map((e) => e.id), text);
+      } else {
+        await sendMessage(text, replyTaskId || undefined);
+      }
       setBody('');
     } finally {
       setSending(false);
@@ -78,6 +103,35 @@ export const SupervisorMessages: React.FC<Props> = ({
         <div className="border-b border-slate-100 px-3 py-2 dark:border-slate-700">
           <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('myTeam')}</p>
         </div>
+        <div className="border-b border-slate-100 p-2 dark:border-slate-700">
+          {primaryAdmin && (
+            <button
+              type="button"
+              onClick={() => { setBroadcastMode(false); onSelectReceiver(primaryAdmin.id); }}
+              className={`mb-1 w-full rounded-lg px-3 py-2.5 text-left text-sm transition ${
+                selectedReceiverId === primaryAdmin.id && !broadcastMode
+                  ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-200'
+                  : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate font-medium text-slate-900 dark:text-slate-100">Primary Admin</p>
+                {unreadFor(primaryAdmin.id) > 0 && <span className="rounded-full bg-indigo-600 px-1.5 py-px text-[10px] font-bold text-white">{unreadFor(primaryAdmin.id)}</span>}
+              </div>
+              <p className="truncate text-xs text-slate-500 dark:text-slate-400">{previewFor(primaryAdmin.id) ?? primaryAdmin.name}</p>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => { setBroadcastMode(true); onSelectReceiver(null); }}
+            className={`w-full rounded-lg px-3 py-2.5 text-left text-sm transition ${
+              broadcastMode ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200' : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'
+            }`}
+          >
+            <p className="truncate font-medium text-slate-900 dark:text-slate-100">All team</p>
+            <p className="truncate text-xs text-slate-500 dark:text-slate-400">Broadcast to every employee</p>
+          </button>
+        </div>
         <div className="flex-1 overflow-y-auto p-2">
           {summariesLoading ? (
             <div className="flex justify-center py-4">
@@ -89,18 +143,22 @@ export const SupervisorMessages: React.FC<Props> = ({
             <div className="space-y-1">
               {sortedEmployees.map((e) => {
                 const prev = previewFor(e.id);
+                const unread = unreadFor(e.id);
                 return (
                   <button
                     key={e.id}
                     type="button"
-                    onClick={() => onSelectReceiver(e.id)}
+                    onClick={() => { setBroadcastMode(false); onSelectReceiver(e.id); }}
                     className={`w-full rounded-lg px-3 py-2.5 text-left text-sm transition ${
                       selectedReceiverId === e.id
                         ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-200'
                         : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'
                     }`}
                   >
-                    <p className="truncate font-medium text-slate-900 dark:text-slate-100">{e.name}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate font-medium text-slate-900 dark:text-slate-100">{e.name}</p>
+                      {unread > 0 && <span className="rounded-full bg-indigo-600 px-1.5 py-px text-[10px] font-bold text-white">{unread}</span>}
+                    </div>
                     {prev && <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{prev}</p>}
                   </button>
                 );
@@ -111,18 +169,22 @@ export const SupervisorMessages: React.FC<Props> = ({
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
-        {!selectedReceiverId ? (
+        {!selectedReceiverId && !broadcastMode ? (
           <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-slate-500 dark:text-slate-400">
             {t('selectEmployeeToMessage')}
           </div>
         ) : (
           <>
             <div className="shrink-0 border-b border-slate-100 px-4 py-3 dark:border-slate-700">
-              <p className="font-medium text-slate-900 dark:text-slate-100">{selectedEmployee?.name ?? selectedReceiverId}</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">{selectedEmployee?.email}</p>
+              <p className="font-medium text-slate-900 dark:text-slate-100">
+                {broadcastMode ? 'All team' : selectedEmployee?.name ?? selectedAdmin?.name ?? selectedReceiverId}
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {broadcastMode ? 'Broadcast message' : selectedEmployee?.email ?? selectedAdmin?.email}
+              </p>
             </div>
 
-            <div className="shrink-0 border-b border-slate-100 px-4 py-2 dark:border-slate-700">
+            {!broadcastMode && selectedEmployee && <div className="shrink-0 border-b border-slate-100 px-4 py-2 dark:border-slate-700">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{t('tasks')}</p>
               {employeeTasks.length === 0 ? (
                 <p className="text-xs text-slate-400 dark:text-slate-500">{t('noTasksAssignedToEmployee')}</p>
@@ -139,9 +201,13 @@ export const SupervisorMessages: React.FC<Props> = ({
                   ))}
                 </ul>
               )}
-            </div>
+            </div>}
 
             <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-3">
+              {broadcastMode ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">This will send one private message to each employee in your team.</p>
+              ) : (
+              <>
               {threadLoading ? (
                 <div className="flex justify-center py-8">
                   <span className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-indigo-500" />
@@ -183,11 +249,14 @@ export const SupervisorMessages: React.FC<Props> = ({
                   </div>
                 ))
               )}
+              </>
+              )}
             </div>
 
             <form onSubmit={handleSend} className="shrink-0 border-t border-slate-100 p-4 dark:border-slate-700">
-              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">{t('linkMessageToTask')}</label>
-              <select
+              {!broadcastMode && selectedEmployee && <>
+                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">{t('linkMessageToTask')}</label>
+                <select
                 value={replyTaskId}
                 onChange={(e) => setReplyTaskId(e.target.value)}
                 className="mb-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
@@ -198,7 +267,8 @@ export const SupervisorMessages: React.FC<Props> = ({
                     {task.title}
                   </option>
                 ))}
-              </select>
+                </select>
+              </>}
               <div className="flex gap-2">
                 <textarea
                   value={body}
