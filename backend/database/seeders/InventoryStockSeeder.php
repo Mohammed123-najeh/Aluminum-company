@@ -6,16 +6,20 @@ use App\Models\Inventory;
 use Illuminate\Database\Seeder;
 
 /**
- * Sets every inventory row to a random on-hand unit quantity (10–30).
- * Run after migrations or when stock was seeded as zero: php artisan db:seed --class=InventoryStockSeeder
+ * Sets every inventory row to a deterministic on-hand unit quantity (10–30),
+ * derived from profile_id+color_code so re-runs (and collaborators) produce
+ * the same numbers. Run: php artisan db:seed --class=InventoryStockSeeder
  */
 class InventoryStockSeeder extends Seeder
 {
     public function run(): void
     {
-        foreach (Inventory::cursor() as $inv) {
-            $inv->quantity = random_int(10, 30);
-            $inv->save();
-        }
+        Inventory::query()
+            ->select(['id', 'profile_id', 'color_code'])
+            ->cursor()
+            ->each(function (Inventory $inv) {
+                $qty = 10 + (crc32($inv->profile_id . ':' . $inv->color_code) % 21);
+                Inventory::whereKey($inv->id)->update(['quantity' => $qty]);
+            });
     }
 }
