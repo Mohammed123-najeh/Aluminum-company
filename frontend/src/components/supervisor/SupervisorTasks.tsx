@@ -62,6 +62,8 @@ export const SupervisorTasks: React.FC<Props> = ({
   /** When true, the TaskModal opens directly in the accessories flow (Step-2 catalog scoped to ACCESSORIES). */
   const [showAccessoryFlow, setShowAccessoryFlow] = useState(false);
   const [showCustomOrder, setShowCustomOrder] = useState(false);
+  /** Drives the "choose task type" popup that the single orange "Add task" button opens. */
+  const [showAddChooser, setShowAddChooser] = useState(false);
   const [editTask, setEditTask] = useState<ApiTask | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('');
@@ -168,31 +170,13 @@ export const SupervisorTasks: React.FC<Props> = ({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => setShowCustomOrder(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-linear-to-r from-violet-600 to-fuchsia-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-fuchsia-500/25 transition hover:from-violet-500 hover:to-fuchsia-400"
-          >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.847.813a4.5 4.5 0 0 0-3.09 3.091ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" />
-            </svg>
-            {t('customOrderButton')}
-          </button>
-          <button
-            onClick={() => { setEditTask(null); setShowAccessoryFlow(true); }}
+            onClick={() => setShowAddChooser(true)}
             className="inline-flex items-center gap-2 rounded-lg bg-linear-to-r from-amber-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-orange-500/25 transition hover:from-amber-400 hover:to-orange-400"
-          >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
-            </svg>
-            {t('addAccessoryTaskButton')}
-          </button>
-          <button
-            onClick={() => { setEditTask(null); setShowModal(true); }}
-            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
-            {t('addTask')}
+            {t('addTaskChooserButton')}
           </button>
         </div>
       </div>
@@ -301,6 +285,77 @@ export const SupervisorTasks: React.FC<Props> = ({
             setShowCustomOrder(false);
           }}
         />
+      )}
+
+      {showAddChooser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowAddChooser(false)} aria-hidden />
+          <div className="relative w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-800">
+            <div className="flex items-start justify-between gap-4 bg-linear-to-r from-amber-500 to-orange-500 px-5 py-4 text-white">
+              <div>
+                <h2 className="text-base font-bold leading-tight">{t('addTaskChooserTitle')}</h2>
+                <p className="mt-0.5 text-xs text-white/85">{t('addTaskChooserSubtitle')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddChooser(false)}
+                className="rounded-lg bg-white/10 p-1.5 text-white/90 transition hover:bg-white/20"
+                aria-label={t('close')}
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="space-y-2 p-4">
+              <button
+                type="button"
+                onClick={() => { setShowAddChooser(false); setEditTask(null); setShowModal(true); }}
+                className="group flex w-full items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 text-start transition hover:border-indigo-300 hover:bg-indigo-50/40 dark:border-slate-600 dark:bg-slate-700/40 dark:hover:border-indigo-500 dark:hover:bg-indigo-950/30"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white">
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                </span>
+                <span className="flex-1">
+                  <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">{t('addTaskChooserAluminumTitle')}</span>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400">{t('addTaskChooserAluminumDesc')}</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowAddChooser(false); setEditTask(null); setShowAccessoryFlow(true); }}
+                className="group flex w-full items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 text-start transition hover:border-orange-300 hover:bg-orange-50/40 dark:border-slate-600 dark:bg-slate-700/40 dark:hover:border-orange-500 dark:hover:bg-orange-950/30"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-linear-to-r from-amber-500 to-orange-500 text-white">
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                  </svg>
+                </span>
+                <span className="flex-1">
+                  <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">{t('addTaskChooserAccessoryTitle')}</span>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400">{t('addTaskChooserAccessoryDesc')}</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowAddChooser(false); setShowCustomOrder(true); }}
+                className="group flex w-full items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 text-start transition hover:border-violet-300 hover:bg-violet-50/40 dark:border-slate-600 dark:bg-slate-700/40 dark:hover:border-violet-500 dark:hover:bg-violet-950/30"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-linear-to-r from-violet-600 to-fuchsia-500 text-white">
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.847.813a4.5 4.5 0 0 0-3.09 3.091Z" />
+                  </svg>
+                </span>
+                <span className="flex-1">
+                  <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">{t('addTaskChooserCustomTitle')}</span>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400">{t('addTaskChooserCustomDesc')}</span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

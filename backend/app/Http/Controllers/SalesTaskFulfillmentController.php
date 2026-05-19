@@ -184,13 +184,20 @@ class SalesTaskFulfillmentController extends Controller
             $order->payment_notes = $data['payment_notes'] ?? null;
             $order->save();
 
-            $task->status = Task::STATUS_COMPLETED;
-            $task->completed_at = now();
-            $task->save();
+            // Only the assigned employee actually doing the work should mark the task complete.
+            // When a supervisor fulfills stock at creation time (the wizard's Step 2), they're
+            // just pre-allocating inventory + issuing a receipt — the task itself stays pending
+            // so the assignee still sees it as work to be done.
+            $isAssigneeFulfilling = $task->assignees->contains('id', $user->id);
+            if ($isAssigneeFulfilling) {
+                $task->status = Task::STATUS_COMPLETED;
+                $task->completed_at = now();
+                $task->save();
 
-            $supervisor = User::find($task->supervisor_id);
-            if ($supervisor) {
-                InAppNotifier::taskStatusForSupervisor($supervisor, $task->fresh(), $user, Task::STATUS_COMPLETED);
+                $supervisor = User::find($task->supervisor_id);
+                if ($supervisor) {
+                    InAppNotifier::taskStatusForSupervisor($supervisor, $task->fresh(), $user, Task::STATUS_COMPLETED);
+                }
             }
 
             $total = (float) $order->total_amount;

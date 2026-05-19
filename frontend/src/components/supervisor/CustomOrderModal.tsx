@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import type { User } from '../../types/user';
 import type { ApiClient, ApiTask } from '../../services/api';
-import { clientsApi } from '../../services/api';
+import { clientsApi, tasksApi } from '../../services/api';
 
 const COLORS = [
   'bg-blue-500',
@@ -42,12 +42,17 @@ type SpecRow = { label: string; value: string };
 
 const CUSTOM_TITLE_PREFIX = 'Custom order:';
 
-function buildDescription(brief: string, specs: SpecRow[]): string {
+function buildDescription(
+  brief: string,
+  specs: SpecRow[],
+  estimatedPrice: string,
+  deliveryAddress: string,
+): string {
   const lines: string[] = [];
   if (brief.trim()) {
     lines.push(brief.trim());
   }
-  const cleanedSpecs = specs.filter((s) => s.label.trim() || s.value.trim());
+  const cleanedSpecs = specs.filter((s) => s.value.trim());
   if (cleanedSpecs.length > 0) {
     lines.push('');
     lines.push('— Custom specifications —');
@@ -56,6 +61,15 @@ function buildDescription(brief: string, specs: SpecRow[]): string {
       const value = s.value.trim() || '—';
       lines.push(`• ${label}: ${value}`);
     });
+  }
+  if (estimatedPrice.trim()) {
+    lines.push('');
+    lines.push(`• Estimated price: ${estimatedPrice.trim()} ILS`);
+  }
+  if (deliveryAddress.trim()) {
+    lines.push('');
+    lines.push('— Delivery / installation address —');
+    lines.push(deliveryAddress.trim());
   }
   return lines.join('\n').trim();
 }
@@ -70,15 +84,23 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
   const [customerPhone, setCustomerPhone] = useState('');
   const [clientId, setClientId] = useState<string | null>(null);
   const [dueDate, setDueDate] = useState('');
+  const [estimatedPrice, setEstimatedPrice] = useState('');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
   const [specs, setSpecs] = useState<SpecRow[]>([
-    { label: 'Profile / shape', value: '' },
-    { label: 'Dimensions', value: '' },
-    { label: 'Color', value: '' },
-    { label: 'Quantity', value: '' },
+    { label: t('customOrderSpecProfile'),    value: '' },
+    { label: t('customOrderSpecDimensions'), value: '' },
+    { label: t('customOrderSpecMaterial'),   value: '' },
+    { label: t('customOrderSpecThickness'),  value: '' },
+    { label: t('customOrderSpecColor'),      value: '' },
+    { label: t('customOrderSpecFinish'),     value: '' },
+    { label: t('customOrderSpecGlassType'),  value: '' },
+    { label: t('customOrderSpecQuantity'),   value: '' },
   ]);
 
   const [clients, setClients] = useState<ApiClient[]>([]);
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -133,7 +155,10 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
     return `${CUSTOM_TITLE_PREFIX} ${raw}`;
   }, [title]);
 
-  const description = useMemo(() => buildDescription(brief, specs), [brief, specs]);
+  const description = useMemo(
+    () => buildDescription(brief, specs, estimatedPrice, deliveryAddress),
+    [brief, specs, estimatedPrice, deliveryAddress],
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,6 +177,24 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
         client_id: clientId,
       });
       if (saved) {
+        // Upload any selected attachments serially. Partial failures don't roll back
+        // the task — surface a warning and close so the supervisor can retry from
+        // the task detail view instead of losing the whole order.
+        if (attachments.length > 0) {
+          let anyFailed = false;
+          for (const file of attachments) {
+            try {
+              await tasksApi.uploadAttachment(saved.id, file, token);
+            } catch {
+              anyFailed = true;
+            }
+          }
+          if (anyFailed) {
+            setError(t('customOrderAttachmentsPartialFail'));
+            setSaving(false);
+            return;
+          }
+        }
         onClose();
       }
     } catch (err) {
@@ -159,6 +202,18 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleFilesPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files ?? []);
+    if (picked.length === 0) return;
+    setAttachments((prev) => [...prev, ...picked]);
+    // Reset so the user can re-select the same file if they remove it then change their mind.
+    e.target.value = '';
+  };
+
+  const removeAttachment = (idx: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== idx));
   };
 
   const inputCls =
@@ -254,6 +309,35 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
                     placeholder={t('orderReference')}
                   />
                 </div>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-400">
+                  {t('customOrderEstimatedPriceLabel')}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={estimatedPrice}
+                  onChange={(e) => setEstimatedPrice(e.target.value)}
+                  className={inputCls}
+                  placeholder={t('customOrderEstimatedPricePlaceholder')}
+                />
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                  {t('customOrderEstimatedPriceCurrencyHint')}
+                </p>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-400">
+                  {t('customOrderDeliveryAddressLabel')}
+                </label>
+                <textarea
+                  value={deliveryAddress}
+                  onChange={(e) => setDeliveryAddress(e.target.value)}
+                  rows={2}
+                  className={inputCls}
+                  placeholder={t('customOrderDeliveryAddressPlaceholder')}
+                />
               </div>
             </div>
           </section>
@@ -368,6 +452,66 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
             )}
           </section>
 
+          {/* Section 3b — Attachments */}
+          <section>
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                {t('customOrderSectionAttachments')}
+              </h3>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-1 rounded-md border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-700 transition hover:bg-violet-100 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-200 dark:hover:bg-violet-950/70"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3 w-3">
+                  <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
+                </svg>
+                {t('customOrderAttachmentsAddButton')}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                onChange={handleFilesPicked}
+                className="hidden"
+              />
+            </div>
+            <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800/60">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                {t('customOrderAttachmentsHint')}
+              </p>
+              {attachments.length === 0 ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {t('customOrderAttachmentsEmpty')}
+                </p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {attachments.map((file, idx) => (
+                    <li
+                      key={`${file.name}-${idx}`}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs dark:border-slate-600 dark:bg-slate-700/60"
+                    >
+                      <span className="truncate text-slate-700 dark:text-slate-200">
+                        {file.name}
+                        <span className="ms-2 text-[10px] text-slate-500 dark:text-slate-400">
+                          {(file.size / 1024).toFixed(1)} KB
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeAttachment(idx)}
+                        className="rounded border border-rose-200 px-2 py-0.5 text-[11px] font-medium text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30"
+                      >
+                        {t('customOrderAttachmentRemove')}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+
           {/* Section 4 — Assignees */}
           <section>
             <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
@@ -456,7 +600,12 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
               className="flex-1 rounded-lg bg-linear-to-r from-violet-600 to-fuchsia-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-fuchsia-500/30 transition hover:from-violet-500 hover:to-fuchsia-400 disabled:opacity-50"
             >
               {saving ? (
-                <span className="inline-flex h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                <span className="inline-flex items-center gap-2">
+                  <span className="inline-flex h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                  {attachments.length > 0 && (
+                    <span className="text-xs">{t('customOrderAttachmentsUploading')}</span>
+                  )}
+                </span>
               ) : (
                 t('customOrderCreate')
               )}
