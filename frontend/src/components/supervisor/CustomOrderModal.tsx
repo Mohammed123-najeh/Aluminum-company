@@ -3,6 +3,7 @@ import { useApp } from '../../contexts/AppContext';
 import type { User } from '../../types/user';
 import type { ApiClient, ApiTask } from '../../services/api';
 import { clientsApi, tasksApi } from '../../services/api';
+import { useStorehouse } from '../../hooks/useStorehouse';
 
 const COLORS = [
   'bg-blue-500',
@@ -38,40 +39,151 @@ type Props = {
   onClose: () => void;
 };
 
-type SpecRow = { label: string; value: string };
+type Hardware = {
+  hinges: boolean;
+  handle: boolean;
+  lock: boolean;
+  closer: boolean;
+  panicBar: boolean;
+  slidingWheels: boolean;
+  cylinder: boolean;
+  magnet: boolean;
+};
+
+type ProductSpec = {
+  productType: string;
+  system: string;
+  width: string;
+  height: string;
+  depth: string;
+  unit: 'cm' | 'mm' | 'in';
+  quantity: string;
+  frameProfile: string;
+  frameMaterial: string;
+  frameThickness: string;
+  frameColor: string;
+  frameFinish: string;
+  glassType: string;
+  glassThickness: string;
+  glassTint: string;
+  hardware: Hardware;
+  productionNotes: string;
+};
+
+const EMPTY_SPEC: ProductSpec = {
+  productType: '',
+  system: '',
+  width: '',
+  height: '',
+  depth: '',
+  unit: 'cm',
+  quantity: '1',
+  frameProfile: '',
+  frameMaterial: '',
+  frameThickness: '',
+  frameColor: '',
+  frameFinish: '',
+  glassType: '',
+  glassThickness: '',
+  glassTint: '',
+  hardware: {
+    hinges: false, handle: false, lock: false, closer: false,
+    panicBar: false, slidingWheels: false, cylinder: false, magnet: false,
+  },
+  productionNotes: '',
+};
 
 const CUSTOM_TITLE_PREFIX = 'Custom order:';
 
+/**
+ * Serialise the structured ProductSpec into a human-readable description block
+ * that lives on Task.description. We intentionally render this as plain text
+ * (not JSON) so anyone viewing the task — supervisor, employee, accountant —
+ * gets a clean, printable spec sheet without needing a custom renderer.
+ *
+ * Sections with no values are skipped entirely so a sparsely-filled spec
+ * doesn't look like a wall of "—" placeholders.
+ */
 function buildDescription(
   brief: string,
-  specs: SpecRow[],
+  spec: ProductSpec,
   estimatedPrice: string,
   deliveryAddress: string,
+  labels: {
+    productSection: string; type: string; system: string;
+    dimensions: string; width: string; height: string; depth: string; quantity: string;
+    frame: string; frameProfile: string; frameMaterial: string; frameThickness: string; frameColor: string; frameFinish: string;
+    glass: string; glassType: string; glassThickness: string; glassTint: string;
+    hardware: string; hardwareNames: Record<keyof Hardware, string>;
+    notes: string;
+    estimatedPrice: string; delivery: string;
+  },
 ): string {
-  const lines: string[] = [];
-  if (brief.trim()) {
-    lines.push(brief.trim());
+  const out: string[] = [];
+  if (brief.trim()) out.push(brief.trim());
+
+  const dim: string[] = [];
+  if (spec.width.trim())  dim.push(`${labels.width}: ${spec.width.trim()} ${spec.unit}`);
+  if (spec.height.trim()) dim.push(`${labels.height}: ${spec.height.trim()} ${spec.unit}`);
+  if (spec.depth.trim())  dim.push(`${labels.depth}: ${spec.depth.trim()} ${spec.unit}`);
+  if (spec.quantity.trim() && spec.quantity.trim() !== '1') dim.push(`${labels.quantity}: ${spec.quantity.trim()}`);
+
+  const productLines: string[] = [];
+  if (spec.productType.trim()) productLines.push(`• ${labels.type}: ${spec.productType.trim()}`);
+  if (spec.system.trim())      productLines.push(`• ${labels.system}: ${spec.system.trim()}`);
+
+  const frameLines: string[] = [];
+  if (spec.frameProfile.trim())   frameLines.push(`• ${labels.frameProfile}: ${spec.frameProfile.trim()}`);
+  if (spec.frameMaterial.trim())  frameLines.push(`• ${labels.frameMaterial}: ${spec.frameMaterial.trim()}`);
+  if (spec.frameThickness.trim()) frameLines.push(`• ${labels.frameThickness}: ${spec.frameThickness.trim()} mm`);
+  if (spec.frameColor.trim())     frameLines.push(`• ${labels.frameColor}: ${spec.frameColor.trim()}`);
+  if (spec.frameFinish.trim())    frameLines.push(`• ${labels.frameFinish}: ${spec.frameFinish.trim()}`);
+
+  const glassLines: string[] = [];
+  if (spec.glassType.trim())      glassLines.push(`• ${labels.glassType}: ${spec.glassType.trim()}`);
+  if (spec.glassThickness.trim()) glassLines.push(`• ${labels.glassThickness}: ${spec.glassThickness.trim()}`);
+  if (spec.glassTint.trim())      glassLines.push(`• ${labels.glassTint}: ${spec.glassTint.trim()}`);
+
+  const enabledHardware = (Object.entries(spec.hardware) as [keyof Hardware, boolean][])
+    .filter(([, on]) => on)
+    .map(([key]) => labels.hardwareNames[key]);
+
+  const pushSection = (heading: string, lines: string[]) => {
+    if (lines.length === 0) return;
+    out.push('');
+    out.push(`— ${heading} —`);
+    lines.forEach((l) => out.push(l));
+  };
+
+  pushSection(labels.productSection, productLines);
+  if (dim.length > 0) {
+    out.push('');
+    out.push(`— ${labels.dimensions} —`);
+    out.push(dim.join('  ·  '));
   }
-  const cleanedSpecs = specs.filter((s) => s.value.trim());
-  if (cleanedSpecs.length > 0) {
-    lines.push('');
-    lines.push('— Custom specifications —');
-    cleanedSpecs.forEach((s) => {
-      const label = s.label.trim() || '(unnamed)';
-      const value = s.value.trim() || '—';
-      lines.push(`• ${label}: ${value}`);
-    });
+  pushSection(labels.frame, frameLines);
+  pushSection(labels.glass, glassLines);
+  if (enabledHardware.length > 0) {
+    out.push('');
+    out.push(`— ${labels.hardware} —`);
+    out.push(enabledHardware.map((h) => `✓ ${h}`).join('   '));
   }
+  if (spec.productionNotes.trim()) {
+    out.push('');
+    out.push(`— ${labels.notes} —`);
+    out.push(spec.productionNotes.trim());
+  }
+
   if (estimatedPrice.trim()) {
-    lines.push('');
-    lines.push(`• Estimated price: ${estimatedPrice.trim()} ILS`);
+    out.push('');
+    out.push(`• ${labels.estimatedPrice}: ${estimatedPrice.trim()} ILS`);
   }
   if (deliveryAddress.trim()) {
-    lines.push('');
-    lines.push('— Delivery / installation address —');
-    lines.push(deliveryAddress.trim());
+    out.push('');
+    out.push(`— ${labels.delivery} —`);
+    out.push(deliveryAddress.trim());
   }
-  return lines.join('\n').trim();
+  return out.join('\n').trim();
 }
 
 export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }) => {
@@ -86,16 +198,7 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
   const [dueDate, setDueDate] = useState('');
   const [estimatedPrice, setEstimatedPrice] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
-  const [specs, setSpecs] = useState<SpecRow[]>([
-    { label: t('customOrderSpecProfile'),    value: '' },
-    { label: t('customOrderSpecDimensions'), value: '' },
-    { label: t('customOrderSpecMaterial'),   value: '' },
-    { label: t('customOrderSpecThickness'),  value: '' },
-    { label: t('customOrderSpecColor'),      value: '' },
-    { label: t('customOrderSpecFinish'),     value: '' },
-    { label: t('customOrderSpecGlassType'),  value: '' },
-    { label: t('customOrderSpecQuantity'),   value: '' },
-  ]);
+  const [spec, setSpec] = useState<ProductSpec>(EMPTY_SPEC);
 
   const [clients, setClients] = useState<ApiClient[]>([]);
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
@@ -104,6 +207,11 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
   const [dragOver, setDragOver] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Pull real catalog colors so the Frame Color field can be a true datalist
+  // backed by what the storehouse actually carries — supervisor can still type
+  // a free-form color if needed.
+  const { colors: catalogColors } = useStorehouse();
 
   useEffect(() => {
     if (!token) return;
@@ -122,11 +230,21 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
     [assigneeIds, employees],
   );
 
-  const updateSpec = (idx: number, patch: Partial<SpecRow>) => {
-    setSpecs((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
-  };
-  const addSpec = () => setSpecs((rows) => [...rows, { label: '', value: '' }]);
-  const removeSpec = (idx: number) => setSpecs((rows) => rows.filter((_, i) => i !== idx));
+  const patchSpec = (patch: Partial<ProductSpec>) => setSpec((s) => ({ ...s, ...patch }));
+  const toggleHardware = (key: keyof Hardware) =>
+    setSpec((s) => ({ ...s, hardware: { ...s.hardware, [key]: !s.hardware[key] } }));
+
+  const sectionFilled = useMemo(
+    () => ({
+      product: Boolean(spec.productType || spec.system),
+      dimensions: Boolean(spec.width || spec.height || spec.depth || (spec.quantity && spec.quantity !== '1')),
+      frame: Boolean(spec.frameProfile || spec.frameMaterial || spec.frameThickness || spec.frameColor || spec.frameFinish),
+      glass: Boolean(spec.glassType || spec.glassThickness || spec.glassTint),
+      hardware: Object.values(spec.hardware).some(Boolean),
+      notes: Boolean(spec.productionNotes.trim()),
+    }),
+    [spec],
+  );
 
   const onDragStart = (e: React.DragEvent, id: string) => {
     e.dataTransfer.setData('text/plain', id);
@@ -156,8 +274,42 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
   }, [title]);
 
   const description = useMemo(
-    () => buildDescription(brief, specs, estimatedPrice, deliveryAddress),
-    [brief, specs, estimatedPrice, deliveryAddress],
+    () =>
+      buildDescription(brief, spec, estimatedPrice, deliveryAddress, {
+        productSection: t('customOrderPkgProductSection'),
+        type: t('customOrderPkgProductType'),
+        system: t('customOrderPkgProductSystem'),
+        dimensions: t('customOrderPkgDimensionsSection'),
+        width: t('customOrderPkgWidth'),
+        height: t('customOrderPkgHeight'),
+        depth: t('customOrderPkgDepth'),
+        quantity: t('customOrderPkgQuantity'),
+        frame: t('customOrderPkgFrameSection'),
+        frameProfile: t('customOrderPkgFrameProfile'),
+        frameMaterial: t('customOrderPkgFrameMaterial'),
+        frameThickness: t('customOrderPkgFrameThickness'),
+        frameColor: t('customOrderPkgFrameColor'),
+        frameFinish: t('customOrderPkgFrameFinish'),
+        glass: t('customOrderPkgGlassSection'),
+        glassType: t('customOrderPkgGlassType'),
+        glassThickness: t('customOrderPkgGlassThickness'),
+        glassTint: t('customOrderPkgGlassTint'),
+        hardware: t('customOrderPkgHardwareSection'),
+        hardwareNames: {
+          hinges: t('customOrderPkgHardwareHinges'),
+          handle: t('customOrderPkgHardwareHandle'),
+          lock: t('customOrderPkgHardwareLock'),
+          closer: t('customOrderPkgHardwareCloser'),
+          panicBar: t('customOrderPkgHardwarePanicBar'),
+          slidingWheels: t('customOrderPkgHardwareSlidingWheels'),
+          cylinder: t('customOrderPkgHardwareCylinder'),
+          magnet: t('customOrderPkgHardwareMagnet'),
+        },
+        notes: t('customOrderPkgNotesSection'),
+        estimatedPrice: t('customOrderEstimatedPriceLabel'),
+        delivery: t('customOrderDeliveryAddressLabel'),
+      }),
+    [brief, spec, estimatedPrice, deliveryAddress, t],
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -395,57 +547,305 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
             </div>
           </section>
 
-          {/* Section 3 — Specs */}
+          {/* Section 3 — Complete product specification */}
           <section>
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">
                 {t('customOrderSectionSpecs')}
               </h3>
-              <button
-                type="button"
-                onClick={addSpec}
-                className="inline-flex items-center gap-1 rounded-md border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-700 transition hover:bg-violet-100 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-200 dark:hover:bg-violet-950/70"
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">{t('customOrderPackageHint')}</p>
+            </div>
+
+            <div className="space-y-3">
+              {/* Product type */}
+              <SpecGroup
+                title={t('customOrderPkgProductSection')}
+                filled={sectionFilled.product}
+                completedLabel={t('customOrderPkgSectionCompleted')}
+                emptyLabel={t('customOrderPkgSectionEmpty')}
+                accent="indigo"
+                icon={
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5M9 12h1.5m-1.5 5.25h1.5m3-10.5H15m-1.5 5.25H15m-1.5 5.25H15" />
+                  </svg>
+                }
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3 w-3">
-                  <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
-                </svg>
-                {t('customOrderAddSpec')}
-              </button>
-            </div>
-            <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800/60">
-              {specs.length === 0 && (
-                <p className="text-xs text-slate-500 dark:text-slate-400">{t('customOrderNoSpecs')}</p>
-              )}
-              {specs.map((s, idx) => (
-                <div key={idx} className="grid gap-2 sm:grid-cols-[10rem_1fr_auto]">
-                  <input
-                    type="text"
-                    value={s.label}
-                    onChange={(e) => updateSpec(idx, { label: e.target.value })}
-                    className={inputCls}
-                    placeholder={t('customOrderSpecLabelPlaceholder')}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <SelectField
+                    label={t('customOrderPkgProductType')}
+                    value={spec.productType}
+                    onChange={(v) => patchSpec({ productType: v })}
+                    inputCls={inputCls}
+                    options={[
+                      ['', '—'],
+                      [t('customOrderPkgProductTypeWindow'), t('customOrderPkgProductTypeWindow')],
+                      [t('customOrderPkgProductTypeDoor'), t('customOrderPkgProductTypeDoor')],
+                      [t('customOrderPkgProductTypeCurtainWall'), t('customOrderPkgProductTypeCurtainWall')],
+                      [t('customOrderPkgProductTypeShutter'), t('customOrderPkgProductTypeShutter')],
+                      [t('customOrderPkgProductTypePartition'), t('customOrderPkgProductTypePartition')],
+                      [t('customOrderPkgProductTypeOther'), t('customOrderPkgProductTypeOther')],
+                    ]}
                   />
-                  <input
-                    type="text"
-                    value={s.value}
-                    onChange={(e) => updateSpec(idx, { value: e.target.value })}
-                    className={inputCls}
-                    placeholder={t('customOrderSpecValuePlaceholder')}
+                  <SelectField
+                    label={t('customOrderPkgProductSystem')}
+                    value={spec.system}
+                    onChange={(v) => patchSpec({ system: v })}
+                    inputCls={inputCls}
+                    options={[
+                      ['', '—'],
+                      [t('customOrderPkgSystemSliding'), t('customOrderPkgSystemSliding')],
+                      [t('customOrderPkgSystemHinged'), t('customOrderPkgSystemHinged')],
+                      [t('customOrderPkgSystemFixed'), t('customOrderPkgSystemFixed')],
+                      [t('customOrderPkgSystemFolding'), t('customOrderPkgSystemFolding')],
+                      [t('customOrderPkgSystemTiltTurn'), t('customOrderPkgSystemTiltTurn')],
+                      [t('customOrderPkgSystemRolling'), t('customOrderPkgSystemRolling')],
+                    ]}
                   />
-                  <button
-                    type="button"
-                    onClick={() => removeSpec(idx)}
-                    className="rounded-lg border border-rose-200 px-2 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30"
-                  >
-                    ✕
-                  </button>
                 </div>
-              ))}
+              </SpecGroup>
+
+              {/* Dimensions */}
+              <SpecGroup
+                title={t('customOrderPkgDimensionsSection')}
+                filled={sectionFilled.dimensions}
+                completedLabel={t('customOrderPkgSectionCompleted')}
+                emptyLabel={t('customOrderPkgSectionEmpty')}
+                accent="sky"
+                icon={
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5h18M3 16.5h18M7.5 3v18M16.5 3v18" />
+                  </svg>
+                }
+              >
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                  <NumberField label={t('customOrderPkgWidth')}  value={spec.width}  onChange={(v) => patchSpec({ width: v })}  inputCls={inputCls} />
+                  <NumberField label={t('customOrderPkgHeight')} value={spec.height} onChange={(v) => patchSpec({ height: v })} inputCls={inputCls} />
+                  <NumberField label={t('customOrderPkgDepth')}  value={spec.depth}  onChange={(v) => patchSpec({ depth: v })}  inputCls={inputCls} />
+                  <SelectField
+                    label={t('customOrderPkgUnit')}
+                    value={spec.unit}
+                    onChange={(v) => patchSpec({ unit: (v || 'cm') as ProductSpec['unit'] })}
+                    inputCls={inputCls}
+                    options={[
+                      ['cm', t('customOrderPkgUnitCm')],
+                      ['mm', t('customOrderPkgUnitMm')],
+                      ['in', t('customOrderPkgUnitInch')],
+                    ]}
+                  />
+                  <NumberField label={t('customOrderPkgQuantity')} value={spec.quantity} onChange={(v) => patchSpec({ quantity: v })} inputCls={inputCls} min={1} />
+                </div>
+              </SpecGroup>
+
+              {/* Frame */}
+              <SpecGroup
+                title={t('customOrderPkgFrameSection')}
+                filled={sectionFilled.frame}
+                completedLabel={t('customOrderPkgSectionCompleted')}
+                emptyLabel={t('customOrderPkgSectionEmpty')}
+                accent="emerald"
+                icon={
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 4.5h18v15H3zM3 8.25h18M3 15.75h18M7.5 4.5v15M16.5 4.5v15" />
+                  </svg>
+                }
+              >
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-400">
+                      {t('customOrderPkgFrameProfile')}
+                    </label>
+                    <input
+                      type="text"
+                      value={spec.frameProfile}
+                      onChange={(e) => patchSpec({ frameProfile: e.target.value })}
+                      className={inputCls}
+                      placeholder={t('customOrderPkgFrameProfilePlaceholder')}
+                    />
+                  </div>
+                  <SelectField
+                    label={t('customOrderPkgFrameMaterial')}
+                    value={spec.frameMaterial}
+                    onChange={(v) => patchSpec({ frameMaterial: v })}
+                    inputCls={inputCls}
+                    options={[
+                      ['', '—'],
+                      [t('customOrderPkgFrameMaterialAluminum'), t('customOrderPkgFrameMaterialAluminum')],
+                      [t('customOrderPkgFrameMaterialUpvc'), t('customOrderPkgFrameMaterialUpvc')],
+                      [t('customOrderPkgFrameMaterialSteel'), t('customOrderPkgFrameMaterialSteel')],
+                      [t('customOrderPkgFrameMaterialWood'), t('customOrderPkgFrameMaterialWood')],
+                    ]}
+                  />
+                  <NumberField label={t('customOrderPkgFrameThickness')} value={spec.frameThickness} onChange={(v) => patchSpec({ frameThickness: v })} inputCls={inputCls} step="0.1" />
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-400">
+                      {t('customOrderPkgFrameColor')}
+                    </label>
+                    <input
+                      type="text"
+                      list="custom-order-color-list"
+                      value={spec.frameColor}
+                      onChange={(e) => patchSpec({ frameColor: e.target.value })}
+                      className={inputCls}
+                      placeholder={t('customOrderPkgFrameColorPlaceholder')}
+                    />
+                    <datalist id="custom-order-color-list">
+                      {catalogColors.map((c) => (
+                        <option key={c.colorCode} value={`${c.name} (${c.colorCode})`} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <SelectField
+                    label={t('customOrderPkgFrameFinish')}
+                    value={spec.frameFinish}
+                    onChange={(v) => patchSpec({ frameFinish: v })}
+                    inputCls={inputCls}
+                    options={[
+                      ['', '—'],
+                      [t('customOrderPkgFinishPowderCoat'), t('customOrderPkgFinishPowderCoat')],
+                      [t('customOrderPkgFinishAnodized'), t('customOrderPkgFinishAnodized')],
+                      [t('customOrderPkgFinishWoodGrain'), t('customOrderPkgFinishWoodGrain')],
+                      [t('customOrderPkgFinishRal'), t('customOrderPkgFinishRal')],
+                      [t('customOrderPkgFinishMillFinish'), t('customOrderPkgFinishMillFinish')],
+                    ]}
+                  />
+                </div>
+              </SpecGroup>
+
+              {/* Glass */}
+              <SpecGroup
+                title={t('customOrderPkgGlassSection')}
+                filled={sectionFilled.glass}
+                completedLabel={t('customOrderPkgSectionCompleted')}
+                emptyLabel={t('customOrderPkgSectionEmpty')}
+                accent="cyan"
+                icon={
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 4.5h15v15h-15zM4.5 9.75h15M4.5 14.25h15M9.75 4.5v15M14.25 4.5v15" />
+                  </svg>
+                }
+              >
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <SelectField
+                    label={t('customOrderPkgGlassType')}
+                    value={spec.glassType}
+                    onChange={(v) => patchSpec({ glassType: v })}
+                    inputCls={inputCls}
+                    options={[
+                      ['', '—'],
+                      [t('customOrderPkgGlassTypeNone'), t('customOrderPkgGlassTypeNone')],
+                      [t('customOrderPkgGlassTypeSingle'), t('customOrderPkgGlassTypeSingle')],
+                      [t('customOrderPkgGlassTypeDouble'), t('customOrderPkgGlassTypeDouble')],
+                      [t('customOrderPkgGlassTypeTriple'), t('customOrderPkgGlassTypeTriple')],
+                      [t('customOrderPkgGlassTypeTempered'), t('customOrderPkgGlassTypeTempered')],
+                      [t('customOrderPkgGlassTypeLaminated'), t('customOrderPkgGlassTypeLaminated')],
+                    ]}
+                  />
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-400">
+                      {t('customOrderPkgGlassThickness')}
+                    </label>
+                    <input
+                      type="text"
+                      value={spec.glassThickness}
+                      onChange={(e) => patchSpec({ glassThickness: e.target.value })}
+                      className={inputCls}
+                      placeholder={t('customOrderPkgGlassThicknessPlaceholder')}
+                    />
+                  </div>
+                  <SelectField
+                    label={t('customOrderPkgGlassTint')}
+                    value={spec.glassTint}
+                    onChange={(v) => patchSpec({ glassTint: v })}
+                    inputCls={inputCls}
+                    options={[
+                      ['', '—'],
+                      [t('customOrderPkgGlassTintClear'), t('customOrderPkgGlassTintClear')],
+                      [t('customOrderPkgGlassTintBronze'), t('customOrderPkgGlassTintBronze')],
+                      [t('customOrderPkgGlassTintGrey'), t('customOrderPkgGlassTintGrey')],
+                      [t('customOrderPkgGlassTintReflective'), t('customOrderPkgGlassTintReflective')],
+                      [t('customOrderPkgGlassTintFrosted'), t('customOrderPkgGlassTintFrosted')],
+                    ]}
+                  />
+                </div>
+              </SpecGroup>
+
+              {/* Hardware */}
+              <SpecGroup
+                title={t('customOrderPkgHardwareSection')}
+                filled={sectionFilled.hardware}
+                completedLabel={t('customOrderPkgSectionCompleted')}
+                emptyLabel={t('customOrderPkgSectionEmpty')}
+                accent="amber"
+                icon={
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437 1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008Z" />
+                  </svg>
+                }
+              >
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {(Object.keys(spec.hardware) as (keyof Hardware)[]).map((key) => {
+                    const labelMap: Record<keyof Hardware, string> = {
+                      hinges: t('customOrderPkgHardwareHinges'),
+                      handle: t('customOrderPkgHardwareHandle'),
+                      lock: t('customOrderPkgHardwareLock'),
+                      closer: t('customOrderPkgHardwareCloser'),
+                      panicBar: t('customOrderPkgHardwarePanicBar'),
+                      slidingWheels: t('customOrderPkgHardwareSlidingWheels'),
+                      cylinder: t('customOrderPkgHardwareCylinder'),
+                      magnet: t('customOrderPkgHardwareMagnet'),
+                    };
+                    const on = spec.hardware[key];
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => toggleHardware(key)}
+                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                          on
+                            ? 'border-amber-400 bg-amber-50 text-amber-800 dark:border-amber-600 dark:bg-amber-950/40 dark:text-amber-200'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-amber-300 hover:bg-amber-50/40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-amber-700 dark:hover:bg-amber-950/20'
+                        }`}
+                        aria-pressed={on}
+                      >
+                        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${on ? 'border-amber-500 bg-amber-500 text-white' : 'border-slate-300 dark:border-slate-500'}`}>
+                          {on && (
+                            <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.704 5.29a1 1 0 0 1 .006 1.414l-7.5 7.6a1 1 0 0 1-1.42.005L3.29 9.83a1 1 0 1 1 1.42-1.408l3.793 3.83 6.79-6.881a1 1 0 0 1 1.41-.082Z" clipRule="evenodd" /></svg>
+                          )}
+                        </span>
+                        <span className="truncate">{labelMap[key]}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </SpecGroup>
+
+              {/* Production notes */}
+              <SpecGroup
+                title={t('customOrderPkgNotesSection')}
+                filled={sectionFilled.notes}
+                completedLabel={t('customOrderPkgSectionCompleted')}
+                emptyLabel={t('customOrderPkgSectionEmpty')}
+                accent="violet"
+                icon={
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487 18.549 2.8a2.121 2.121 0 1 1 3 3L19.862 7.487M16.862 4.487 9 12.349V15h2.652l7.21-7.213M16.862 4.487l3 3M4.5 19.5h15" />
+                  </svg>
+                }
+              >
+                <textarea
+                  value={spec.productionNotes}
+                  onChange={(e) => patchSpec({ productionNotes: e.target.value })}
+                  rows={3}
+                  className={inputCls}
+                  placeholder={t('customOrderPkgNotesPlaceholder')}
+                />
+              </SpecGroup>
             </div>
+
             {description && (
-              <details className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              <details className="mt-3 text-xs text-slate-500 dark:text-slate-400">
                 <summary className="cursor-pointer font-medium">{t('customOrderPreviewDescription')}</summary>
-                <pre className="mt-1 whitespace-pre-wrap rounded-lg bg-slate-50 p-2 font-mono text-[11px] text-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
+                <pre className="mt-1 whitespace-pre-wrap rounded-lg bg-slate-50 p-3 font-mono text-[11px] leading-relaxed text-slate-700 dark:bg-slate-900/60 dark:text-slate-300">
 {description}
                 </pre>
               </details>
@@ -616,3 +1016,81 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
     </div>
   );
 };
+
+// ── Local helpers for the structured spec UI ───────────────────────────────
+
+type AccentName = 'indigo' | 'sky' | 'emerald' | 'cyan' | 'amber' | 'violet';
+
+const ACCENT_STYLES: Record<AccentName, { badgeOn: string; badgeOff: string; iconWrap: string; ring: string }> = {
+  indigo:  { badgeOn: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-200',   badgeOff: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400', iconWrap: 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300',   ring: 'ring-indigo-200 dark:ring-indigo-900' },
+  sky:     { badgeOn: 'bg-sky-100 text-sky-700 dark:bg-sky-950/50 dark:text-sky-200',               badgeOff: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400', iconWrap: 'bg-sky-500/15 text-sky-600 dark:text-sky-300',             ring: 'ring-sky-200 dark:ring-sky-900' },
+  emerald: { badgeOn: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-200', badgeOff: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400', iconWrap: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300', ring: 'ring-emerald-200 dark:ring-emerald-900' },
+  cyan:    { badgeOn: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-950/50 dark:text-cyan-200',           badgeOff: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400', iconWrap: 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-300',           ring: 'ring-cyan-200 dark:ring-cyan-900' },
+  amber:   { badgeOn: 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-200',       badgeOff: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400', iconWrap: 'bg-amber-500/15 text-amber-600 dark:text-amber-300',       ring: 'ring-amber-200 dark:ring-amber-900' },
+  violet:  { badgeOn: 'bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-200',   badgeOff: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400', iconWrap: 'bg-violet-500/15 text-violet-600 dark:text-violet-300',     ring: 'ring-violet-200 dark:ring-violet-900' },
+};
+
+const SpecGroup: React.FC<{
+  title: string;
+  filled: boolean;
+  completedLabel: string;
+  emptyLabel: string;
+  accent: AccentName;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}> = ({ title, filled, completedLabel, emptyLabel, accent, icon, children }) => {
+  const styles = ACCENT_STYLES[accent];
+  return (
+    <div className={`rounded-xl border border-slate-200 bg-white p-4 ring-1 dark:border-slate-700 dark:bg-slate-800/60 ${filled ? styles.ring : 'ring-transparent'}`}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${styles.iconWrap}`}>{icon}</span>
+          <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{title}</h4>
+        </div>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${filled ? styles.badgeOn : styles.badgeOff}`}>
+          {filled ? completedLabel : emptyLabel}
+        </span>
+      </div>
+      {children}
+    </div>
+  );
+};
+
+const SelectField: React.FC<{
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  inputCls: string;
+  options: [string, string][];
+}> = ({ label, value, onChange, inputCls, options }) => (
+  <div>
+    <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-400">{label}</label>
+    <select value={value} onChange={(e) => onChange(e.target.value)} className={inputCls}>
+      {options.map(([val, lbl]) => (
+        <option key={val} value={val}>{lbl}</option>
+      ))}
+    </select>
+  </div>
+);
+
+const NumberField: React.FC<{
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  inputCls: string;
+  min?: number;
+  step?: string;
+}> = ({ label, value, onChange, inputCls, min, step }) => (
+  <div>
+    <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-400">{label}</label>
+    <input
+      type="number"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={inputCls}
+      min={min}
+      step={step}
+      placeholder="—"
+    />
+  </div>
+);
