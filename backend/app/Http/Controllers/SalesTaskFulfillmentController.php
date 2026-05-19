@@ -117,7 +117,12 @@ class SalesTaskFulfillmentController extends Controller
                     'customer_reference' => $data['customer_reference'] ?? null,
                 ]);
                 $task->order_id = $order->id;
-                $task->status = Task::STATUS_IN_PROGRESS;
+                // Only an assignee actually working the task should move it off "pending".
+                // If a supervisor is the one allocating stock at creation time, leave the
+                // task pending so the assigned employee still sees real, unstarted work.
+                if ($task->assignees->contains('id', $user->id)) {
+                    $task->status = Task::STATUS_IN_PROGRESS;
+                }
                 $task->save();
             }
 
