@@ -21,6 +21,8 @@ use App\Http\Controllers\AccountantFinanceController;
 use App\Http\Controllers\AdminSubmissionController;
 use App\Http\Controllers\AdminApprovalsController;
 use App\Http\Controllers\EmployeeDebitRequestController;
+use App\Http\Controllers\FinanceCenterController;
+use App\Http\Controllers\HrCenterController;
 use Illuminate\Support\Facades\Route;
 
 // Public login is registered in bootstrap/app.php (then) as POST /api/login.
@@ -139,4 +141,90 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/ai/shared/{token}', [AiController::class, 'sharedConversation'])->where('token', '[0-9a-fA-F\-]{36}');
     Route::post('/ai/chat', [AiController::class, 'chat'])->middleware('throttle:30,1');
     Route::post('/ai/summarize-today', [AiController::class, 'summarizeToday'])->middleware('throttle:15,1');
+
+    // ===== Finance Center (accountant + admin) =====
+    Route::get('/finance/dashboard', [FinanceCenterController::class, 'dashboard']);
+
+    Route::get('/finance/suppliers', [FinanceCenterController::class, 'listSuppliers']);
+    Route::post('/finance/suppliers', [FinanceCenterController::class, 'storeSupplier']);
+    Route::patch('/finance/suppliers/{id}', [FinanceCenterController::class, 'updateSupplier']);
+    Route::delete('/finance/suppliers/{id}', [FinanceCenterController::class, 'deleteSupplier']);
+
+    Route::get('/finance/transactions', [FinanceCenterController::class, 'listTransactions']);
+    Route::post('/finance/transactions', [FinanceCenterController::class, 'storeTransaction']);
+    Route::patch('/finance/transactions/{id}', [FinanceCenterController::class, 'updateTransaction']);
+    Route::delete('/finance/transactions/{id}', [FinanceCenterController::class, 'deleteTransaction']);
+
+    Route::get('/finance/expense-categories', [FinanceCenterController::class, 'listExpenseCategories']);
+    Route::post('/finance/expense-categories', [FinanceCenterController::class, 'storeExpenseCategory']);
+    Route::patch('/finance/expense-categories/{id}', [FinanceCenterController::class, 'updateExpenseCategory']);
+    Route::delete('/finance/expense-categories/{id}', [FinanceCenterController::class, 'deleteExpenseCategory']);
+
+    Route::get('/finance/expenses', [FinanceCenterController::class, 'listExpenses']);
+    Route::post('/finance/expenses', [FinanceCenterController::class, 'storeExpense']);
+    Route::patch('/finance/expenses/{id}/decide', [FinanceCenterController::class, 'decideExpense']);
+    Route::delete('/finance/expenses/{id}', [FinanceCenterController::class, 'deleteExpense']);
+
+    Route::get('/finance/customer-invoices', [FinanceCenterController::class, 'listCustomerInvoices']);
+    Route::get('/finance/customer-invoices/{id}', [FinanceCenterController::class, 'showCustomerInvoice']);
+    Route::post('/finance/customer-invoices', [FinanceCenterController::class, 'storeCustomerInvoice']);
+    Route::patch('/finance/customer-invoices/{id}', [FinanceCenterController::class, 'updateCustomerInvoice']);
+    Route::delete('/finance/customer-invoices/{id}', [FinanceCenterController::class, 'deleteCustomerInvoice']);
+
+    Route::get('/finance/supplier-invoices', [FinanceCenterController::class, 'listSupplierInvoices']);
+    Route::post('/finance/supplier-invoices', [FinanceCenterController::class, 'storeSupplierInvoice']);
+    Route::patch('/finance/supplier-invoices/{id}/decide', [FinanceCenterController::class, 'decideSupplierInvoice']);
+    Route::delete('/finance/supplier-invoices/{id}', [FinanceCenterController::class, 'deleteSupplierInvoice']);
+
+    Route::get('/finance/receipt-vouchers', [FinanceCenterController::class, 'listReceiptVouchers']);
+    Route::post('/finance/receipt-vouchers', [FinanceCenterController::class, 'storeReceiptVoucher']);
+
+    Route::get('/finance/payment-vouchers', [FinanceCenterController::class, 'listPaymentVouchers']);
+    Route::post('/finance/payment-vouchers', [FinanceCenterController::class, 'storePaymentVoucher']);
+
+    Route::get('/finance/aging', [FinanceCenterController::class, 'aging']);
+
+    Route::get('/finance/reports/pnl', [FinanceCenterController::class, 'reportPnl']);
+    Route::get('/finance/reports/expense-breakdown', [FinanceCenterController::class, 'reportExpenseBreakdown']);
+
+    Route::get('/finance/settings/work-schedule', [FinanceCenterController::class, 'workScheduleSettings']);
+    Route::patch('/finance/settings/work-schedule', [FinanceCenterController::class, 'updateWorkScheduleSettings']);
+
+    // ===== HR Center (hr + admin) =====
+    Route::get('/hr-center/dashboard', [HrCenterController::class, 'dashboard']);
+
+    Route::get('/hr-center/employees', [HrCenterController::class, 'listEmployees']);
+    Route::get('/hr-center/employees/{id}', [HrCenterController::class, 'showEmployee']);
+    Route::post('/hr-center/employees', [HrCenterController::class, 'storeEmployee']);
+    Route::patch('/hr-center/employees/{id}', [HrCenterController::class, 'updateEmployee']);
+
+    Route::get('/hr-center/employees/{userId}/documents', [HrCenterController::class, 'listDocuments']);
+    Route::post('/hr-center/employees/{userId}/documents', [HrCenterController::class, 'storeDocument']);
+    Route::delete('/hr-center/documents/{id}', [HrCenterController::class, 'deleteDocument']);
+
+    Route::get('/hr-center/attendance/daily', [HrCenterController::class, 'attendanceDaily']);
+    Route::get('/hr-center/attendance/monthly', [HrCenterController::class, 'attendanceMonthly']);
+    Route::post('/hr-center/attendance/manual', [HrCenterController::class, 'attendanceManual']);
+    Route::patch('/hr-center/attendance/{id}', [HrCenterController::class, 'attendanceUpdate']);
+    Route::patch('/hr-center/attendance/{id}/justify', [HrCenterController::class, 'justifyAttendance']);
+
+    Route::get('/hr-center/holidays', [HrCenterController::class, 'listHolidays']);
+    Route::post('/hr-center/holidays', [HrCenterController::class, 'storeHoliday']);
+    Route::delete('/hr-center/holidays/{id}', [HrCenterController::class, 'deleteHoliday']);
+
+    Route::get('/hr-center/payroll/runs', [HrCenterController::class, 'listPayrollRuns']);
+    Route::get('/hr-center/payroll/runs/{id}', [HrCenterController::class, 'showPayrollRun']);
+    Route::post('/hr-center/payroll/compute', [HrCenterController::class, 'computePayrollRun']);
+    Route::patch('/hr-center/payroll/payslips/{id}', [HrCenterController::class, 'updatePayslip']);
+    Route::post('/hr-center/payroll/runs/{id}/approve', [HrCenterController::class, 'approvePayrollRun']);
+    Route::post('/hr-center/payroll/payslips/{id}/pay', [HrCenterController::class, 'payPayslip']);
+
+    Route::get('/hr-center/increments', [HrCenterController::class, 'listIncrements']);
+    Route::post('/hr-center/increments', [HrCenterController::class, 'storeIncrement']);
+
+    Route::get('/hr-center/leave/balances', [HrCenterController::class, 'leaveBalances']);
+    Route::patch('/hr-center/leave/balances/{userId}', [HrCenterController::class, 'adjustLeaveBalance']);
+
+    Route::get('/hr-center/reports/absence-tardiness', [HrCenterController::class, 'reportAbsenceTardiness']);
+    Route::get('/hr-center/reports/payroll', [HrCenterController::class, 'reportPayroll']);
 });

@@ -25,6 +25,22 @@ class User extends Authenticatable
         'supervisor_id',
         'status',
         'last_login_at',
+        'employee_number',
+        'allowances',
+        'national_id',
+        'nationality',
+        'birth_date',
+        'gender',
+        'marital_status',
+        'children_count',
+        'address',
+        'phone',
+        'photo_path',
+        'hire_date',
+        'contract_type',
+        'contract_duration',
+        'bank_account',
+        'department',
     ];
 
     protected $hidden = [
@@ -41,7 +57,31 @@ class User extends Authenticatable
             'base_salary'           => 'decimal:2',
             'hourly_rate'           => 'decimal:2',
             'annual_leave_balance'  => 'decimal:1',
+            'allowances'            => 'array',
+            'birth_date'            => 'date',
+            'hire_date'             => 'date',
+            'children_count'        => 'integer',
         ];
+    }
+
+    public function documents()
+    {
+        return $this->hasMany(EmployeeDocument::class);
+    }
+
+    public function payslips()
+    {
+        return $this->hasMany(Payslip::class);
+    }
+
+    public function salaryIncrements()
+    {
+        return $this->hasMany(SalaryIncrement::class);
+    }
+
+    public function attendanceLogs()
+    {
+        return $this->hasMany(AttendanceLog::class);
     }
 
     public function supervisor()
@@ -111,6 +151,22 @@ class User extends Authenticatable
             'status'               => $this->status,
             'lastLogin'            => $this->last_login_at?->toISOString(),
             'createdAt'            => $this->created_at->toISOString(),
+            'employeeNumber'       => $this->employee_number,
+            'allowances'           => $this->allowances ?? [],
+            'nationalId'           => $this->national_id,
+            'nationality'          => $this->nationality,
+            'birthDate'            => $this->birth_date?->toDateString(),
+            'gender'               => $this->gender,
+            'maritalStatus'        => $this->marital_status,
+            'childrenCount'        => $this->children_count,
+            'address'              => $this->address,
+            'phone'                => $this->phone,
+            'photoPath'            => $this->photo_path,
+            'hireDate'             => $this->hire_date?->toDateString(),
+            'contractType'         => $this->contract_type,
+            'contractDuration'     => $this->contract_duration,
+            'bankAccount'          => $this->bank_account,
+            'department'           => $this->department,
         ];
     }
 }

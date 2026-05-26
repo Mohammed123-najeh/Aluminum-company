@@ -1440,3 +1440,549 @@ export const attendanceApi = {
     return request<ApiPayrollSummary>('GET', `/attendance/summary${suffix}`, undefined, token);
   },
 };
+
+// ── Finance Center ───────────────────────────────────────────────────────────
+
+export type ApiFinanceKpi = { value: number; prev: number };
+export type ApiFinanceDashboard = {
+  kpi: { revenue: ApiFinanceKpi; expenses: ApiFinanceKpi; net: ApiFinanceKpi; receivables: ApiFinanceKpi };
+  trend: Array<{ month: string; revenue: number; expenses: number }>;
+  byCategory: Array<{ categoryId: string; nameAr: string | null; nameEn: string | null; total: number }>;
+  recent: ApiFinanceTransaction[];
+  alerts: { overdueInvoices: number; pendingAdvances: number; debtsOver30: number };
+};
+
+export type ApiFinanceTransaction = {
+  id: string;
+  type: 'revenue' | 'payment';
+  source: string;
+  refType: string | null;
+  refId: string | null;
+  partyType: string | null;
+  partyId: string | null;
+  partyName: string | null;
+  amount: string;
+  method: string | null;
+  referenceNo: string | null;
+  date: string | null;
+  notes: string | null;
+  status: string;
+  createdById: string | null;
+  createdAt: string | null;
+};
+
+export type ApiSupplier = {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  vatNo: string | null;
+  notes: string | null;
+  archived: boolean;
+  createdAt: string | null;
+};
+
+export type ApiExpenseCategory = { id: string; nameAr: string; nameEn: string; ordering: number; archived: boolean };
+
+export type ApiExpense = {
+  id: string;
+  categoryId: string;
+  categoryNameAr: string | null;
+  categoryNameEn: string | null;
+  description: string;
+  amount: string;
+  date: string | null;
+  supplierName: string | null;
+  supplierId: string | null;
+  paymentMethod: string | null;
+  referenceNo: string | null;
+  attachmentPath: string | null;
+  submittedById: string | null;
+  submittedByName: string | null;
+  status: 'pending' | 'approved' | 'rejected' | 'paid';
+  approvedById: string | null;
+  approvedByName: string | null;
+  approvedAt: string | null;
+  rejectionReason: string | null;
+  createdAt: string | null;
+};
+
+export type ApiCustomerInvoiceItem = {
+  id: string;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  lineTotal: string;
+  ordering: number;
+};
+
+export type ApiCustomerInvoice = {
+  id: string;
+  number: string;
+  date: string | null;
+  dueDate: string | null;
+  clientId: string | null;
+  clientName: string | null;
+  orderId: string | null;
+  subtotal: string;
+  vatRate: string;
+  vatAmount: string;
+  total: string;
+  paid: string;
+  balance: string;
+  status: 'draft' | 'sent' | 'partial' | 'paid' | 'overdue' | 'cancelled';
+  notes: string | null;
+  items: ApiCustomerInvoiceItem[];
+  createdAt: string | null;
+};
+
+export type ApiSupplierInvoice = {
+  id: string;
+  number: string;
+  date: string | null;
+  dueDate: string | null;
+  supplierId: string;
+  supplierName: string | null;
+  subtotal: string;
+  vatRate: string;
+  vatAmount: string;
+  total: string;
+  paid: string;
+  balance: string;
+  status: 'pending_approval' | 'approved' | 'paid' | 'rejected';
+  notes: string | null;
+  attachmentPath: string | null;
+  rejectionReason: string | null;
+  items: ApiCustomerInvoiceItem[];
+  createdAt: string | null;
+};
+
+export type ApiVoucherAllocation = { invoiceId: string; amount: string };
+
+export type ApiReceiptVoucher = {
+  id: string;
+  number: string;
+  date: string | null;
+  clientId: string | null;
+  clientName: string | null;
+  amount: string;
+  method: string | null;
+  referenceNo: string | null;
+  notes: string | null;
+  allocations: ApiVoucherAllocation[];
+  createdAt: string | null;
+};
+
+export type ApiPaymentVoucher = {
+  id: string;
+  number: string;
+  date: string | null;
+  payeeType: 'supplier' | 'employee' | 'other';
+  payeeId: string | null;
+  payeeName: string | null;
+  amount: string;
+  method: string | null;
+  referenceNo: string | null;
+  purpose: string | null;
+  notes: string | null;
+  allocations: ApiVoucherAllocation[];
+  createdAt: string | null;
+};
+
+export type ApiAging = {
+  receivables: {
+    buckets: { current_0_30: number; d31_60: number; d61_90: number; d90_plus: number };
+    rows: ApiCustomerInvoice[];
+  };
+  payables: {
+    buckets: { current_0_30: number; d31_60: number; d61_90: number; d90_plus: number };
+    rows: ApiSupplierInvoice[];
+  };
+};
+
+export type ApiWorkScheduleSettings = {
+  id: string;
+  workStart: string;
+  workEnd: string;
+  graceMinutes: number;
+  workDays: string[];
+  lateDeductionPerMinute: string;
+  absenceDeductionFormula: string;
+  vatRate: string;
+  employeeInsurancePct: string;
+  employerInsurancePct: string;
+};
+
+function qs(params: Record<string, string | number | undefined | null>): string {
+  const u = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') u.set(k, String(v));
+  }
+  const s = u.toString();
+  return s ? `?${s}` : '';
+}
+
+export const financeCenterApi = {
+  dashboard: (token: string) => request<ApiFinanceDashboard>('GET', '/finance/dashboard', undefined, token),
+
+  // Suppliers
+  listSuppliers: (token: string) => request<ApiSupplier[]>('GET', '/finance/suppliers', undefined, token),
+  createSupplier: (token: string, body: Partial<ApiSupplier>) => request<ApiSupplier>('POST', '/finance/suppliers', body, token),
+  updateSupplier: (token: string, id: string, body: Partial<ApiSupplier>) => request<ApiSupplier>('PATCH', `/finance/suppliers/${id}`, body, token),
+  deleteSupplier: (token: string, id: string) => request<{ message: string }>('DELETE', `/finance/suppliers/${id}`, undefined, token),
+
+  // Transactions (revenue + payments)
+  listTransactions: (token: string, params: { type?: 'revenue' | 'payment'; from?: string; to?: string; source?: string } = {}) =>
+    request<ApiFinanceTransaction[]>('GET', `/finance/transactions${qs(params)}`, undefined, token),
+  createTransaction: (token: string, body: {
+    type: 'revenue' | 'payment'; source: string; amount: number | string; date: string;
+    party_type?: string; party_id?: string | number; party_name?: string;
+    method?: string; reference_no?: string; notes?: string;
+  }) => request<ApiFinanceTransaction>('POST', '/finance/transactions', body, token),
+  updateTransaction: (token: string, id: string, body: Partial<{
+    source: string; party_type: string; party_id: string | number; party_name: string;
+    amount: number | string; method: string; reference_no: string; date: string;
+    notes: string; status: string;
+  }>) => request<ApiFinanceTransaction>('PATCH', `/finance/transactions/${id}`, body, token),
+  deleteTransaction: (token: string, id: string) => request<{ message: string }>('DELETE', `/finance/transactions/${id}`, undefined, token),
+
+  // Expense categories
+  listExpenseCategories: (token: string) => request<ApiExpenseCategory[]>('GET', '/finance/expense-categories', undefined, token),
+  createExpenseCategory: (token: string, body: { name_ar: string; name_en: string; ordering?: number }) =>
+    request<ApiExpenseCategory>('POST', '/finance/expense-categories', body, token),
+  updateExpenseCategory: (token: string, id: string, body: Partial<{ name_ar: string; name_en: string; ordering: number; archived: boolean }>) =>
+    request<ApiExpenseCategory>('PATCH', `/finance/expense-categories/${id}`, body, token),
+  deleteExpenseCategory: (token: string, id: string) =>
+    request<{ message: string }>('DELETE', `/finance/expense-categories/${id}`, undefined, token),
+
+  // Expenses
+  listExpenses: (token: string, params: { status?: string; category_id?: string; from?: string; to?: string } = {}) =>
+    request<ApiExpense[]>('GET', `/finance/expenses${qs(params)}`, undefined, token),
+  createExpense: (token: string, body: {
+    category_id: string | number; description: string; amount: number; date: string;
+    supplier_name?: string; supplier_id?: string | number; payment_method?: string;
+    reference_no?: string; attachment_path?: string;
+  }) => request<ApiExpense>('POST', '/finance/expenses', body, token),
+  decideExpense: (token: string, id: string, body: { status: 'approved' | 'rejected' | 'paid'; rejection_reason?: string }) =>
+    request<ApiExpense>('PATCH', `/finance/expenses/${id}/decide`, body, token),
+  deleteExpense: (token: string, id: string) => request<{ message: string }>('DELETE', `/finance/expenses/${id}`, undefined, token),
+
+  // Customer invoices
+  listCustomerInvoices: (token: string, params: { status?: string; client_id?: string } = {}) =>
+    request<ApiCustomerInvoice[]>('GET', `/finance/customer-invoices${qs(params)}`, undefined, token),
+  showCustomerInvoice: (token: string, id: string) =>
+    request<ApiCustomerInvoice>('GET', `/finance/customer-invoices/${id}`, undefined, token),
+  createCustomerInvoice: (token: string, body: {
+    date: string; due_date?: string; client_id?: string | number;
+    client_name_snapshot?: string; order_id?: string | number; notes?: string;
+    items: Array<{ description: string; quantity: number; unit_price: number }>;
+  }) => request<ApiCustomerInvoice>('POST', '/finance/customer-invoices', body, token),
+  updateCustomerInvoice: (token: string, id: string, body: Partial<Pick<ApiCustomerInvoice, 'date' | 'dueDate' | 'notes' | 'status'>>) =>
+    request<ApiCustomerInvoice>('PATCH', `/finance/customer-invoices/${id}`, body, token),
+  deleteCustomerInvoice: (token: string, id: string) =>
+    request<{ message: string }>('DELETE', `/finance/customer-invoices/${id}`, undefined, token),
+
+  // Supplier invoices
+  listSupplierInvoices: (token: string, params: { status?: string; supplier_id?: string } = {}) =>
+    request<ApiSupplierInvoice[]>('GET', `/finance/supplier-invoices${qs(params)}`, undefined, token),
+  createSupplierInvoice: (token: string, body: {
+    number: string; date: string; due_date?: string; supplier_id: string | number;
+    notes?: string; attachment_path?: string;
+    items: Array<{ description: string; quantity: number; unit_price: number }>;
+  }) => request<ApiSupplierInvoice>('POST', '/finance/supplier-invoices', body, token),
+  decideSupplierInvoice: (token: string, id: string, body: { status: 'approved' | 'rejected'; rejection_reason?: string }) =>
+    request<ApiSupplierInvoice>('PATCH', `/finance/supplier-invoices/${id}/decide`, body, token),
+  deleteSupplierInvoice: (token: string, id: string) =>
+    request<{ message: string }>('DELETE', `/finance/supplier-invoices/${id}`, undefined, token),
+
+  // Receipt + Payment vouchers
+  listReceiptVouchers: (token: string, params: { client_id?: string } = {}) =>
+    request<ApiReceiptVoucher[]>('GET', `/finance/receipt-vouchers${qs(params)}`, undefined, token),
+  createReceiptVoucher: (token: string, body: {
+    date: string; client_id?: string | number; payer_name?: string;
+    amount: number; method?: string; reference_no?: string; notes?: string;
+    allocations?: Array<{ invoice_id: string | number; amount: number }>;
+  }) => request<ApiReceiptVoucher>('POST', '/finance/receipt-vouchers', body, token),
+
+  listPaymentVouchers: (token: string, params: { payee_type?: string } = {}) =>
+    request<ApiPaymentVoucher[]>('GET', `/finance/payment-vouchers${qs(params)}`, undefined, token),
+  createPaymentVoucher: (token: string, body: {
+    date: string; payee_type: 'supplier' | 'employee' | 'other'; payee_id?: string | number;
+    payee_name?: string; amount: number; method?: string; reference_no?: string;
+    purpose?: string; notes?: string;
+    allocations?: Array<{ invoice_id: string | number; amount: number }>;
+  }) => request<ApiPaymentVoucher>('POST', '/finance/payment-vouchers', body, token),
+
+  // Debts
+  aging: (token: string) => request<ApiAging>('GET', '/finance/aging', undefined, token),
+
+  // Reports
+  reportPnl: (token: string, params: { from?: string; to?: string } = {}) =>
+    request<{ from: string; to: string; totals: { revenue: number; expenses: number; net: number }; byMonth: Array<{ month: string; type: string; total: number }> }>(
+      'GET', `/finance/reports/pnl${qs(params)}`, undefined, token
+    ),
+  reportExpenseBreakdown: (token: string, params: { from?: string; to?: string } = {}) =>
+    request<{ from: string; to: string; rows: Array<{ categoryId: string; nameAr: string | null; nameEn: string | null; total: number; count: number }> }>(
+      'GET', `/finance/reports/expense-breakdown${qs(params)}`, undefined, token
+    ),
+
+  // Settings
+  workScheduleSettings: (token: string) =>
+    request<ApiWorkScheduleSettings>('GET', '/finance/settings/work-schedule', undefined, token),
+  updateWorkScheduleSettings: (token: string, body: Partial<{
+    work_start: string; work_end: string; grace_minutes: number; work_days: string[];
+    late_deduction_per_minute: number; absence_deduction_formula: string;
+    vat_rate: number; employee_insurance_pct: number; employer_insurance_pct: number;
+  }>) => request<ApiWorkScheduleSettings>('PATCH', '/finance/settings/work-schedule', body, token),
+};
+
+// ── HR Center ────────────────────────────────────────────────────────────────
+
+export type ApiHrDashboard = {
+  kpi: {
+    totalEmployees: number;
+    presentToday: number;
+    absentToday: number;
+    pendingLeave: number;
+    monthlyPayroll: number;
+  };
+  weekly: Array<{ date: string; present: number; late: number; absent: number }>;
+  byDepartment: Array<{ label: string; count: number }>;
+  liveAttendance: Array<{
+    id: string;
+    userId: string;
+    userName: string | null;
+    department: string | null;
+    clockInAt: string | null;
+    clockOutAt: string | null;
+    status: string;
+    lateMinutes: number;
+  }>;
+};
+
+export type ApiEmployee = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  employeeType: string | null;
+  mainJob: string | null;
+  baseSalary: string | null;
+  hourlyRate: string | null;
+  annualLeaveBalance: string | null;
+  supervisorId: string | null;
+  status: string;
+  lastLogin: string | null;
+  createdAt: string | null;
+  employeeNumber: string | null;
+  allowances: Record<string, number | string> | null;
+  nationalId: string | null;
+  nationality: string | null;
+  birthDate: string | null;
+  gender: string | null;
+  maritalStatus: string | null;
+  childrenCount: number | null;
+  address: string | null;
+  phone: string | null;
+  photoPath: string | null;
+  hireDate: string | null;
+  contractType: string | null;
+  contractDuration: string | null;
+  bankAccount: string | null;
+  department: string | null;
+};
+
+export type ApiAttendanceLogRow = {
+  id: string;
+  userId: string;
+  userName?: string | null;
+  department?: string | null;
+  clockInAt: string | null;
+  clockOutAt: string | null;
+  minutesWorked: number | null;
+  hoursWorked: number | null;
+  status: string;
+  lateMinutes: number;
+  justified: boolean;
+  excuseDocumentPath: string | null;
+  justificationReason: string | null;
+  decidedById: string | null;
+  decidedAt: string | null;
+  notes: string | null;
+};
+
+export type ApiAttendanceMonthly = {
+  year: number;
+  month: number;
+  daysInMonth: number;
+  rows: Array<{
+    userId: string;
+    name: string;
+    department: string | null;
+    days: Record<string, string | null>;
+    totals: { present: number; absent: number; late: number; leave: number };
+  }>;
+};
+
+export type ApiPublicHoliday = { id: string; date: string; nameAr: string; nameEn: string };
+
+export type ApiPayrollRun = {
+  id: string;
+  year: number;
+  month: number;
+  status: 'draft' | 'approved' | 'paid';
+  totalGross: string;
+  totalDeductions: string;
+  totalNet: string;
+  employeeCount: number;
+  approvedAt: string | null;
+  paidAt: string | null;
+  createdAt: string | null;
+  notes: string | null;
+};
+
+export type ApiPayslip = {
+  id: string;
+  runId: string;
+  userId: string;
+  userName?: string | null;
+  department?: string | null;
+  mainJob?: string | null;
+  baseSalary: string;
+  allowances: Record<string, number | string>;
+  deductions: Record<string, number | string>;
+  gross: string;
+  totalDeductions: string;
+  net: string;
+  status: 'pending' | 'paid';
+  paidAt: string | null;
+  notes: string | null;
+};
+
+export type ApiSalaryIncrement = {
+  id: string;
+  userId: string;
+  userName: string | null;
+  department: string | null;
+  type: 'annual' | 'promotion' | 'bonus' | 'adjustment';
+  oldSalary: string;
+  newSalary: string;
+  amount: string;
+  percentage: string | null;
+  effectiveDate: string | null;
+  reason: string | null;
+  createdById: string | null;
+  createdByName: string | null;
+  applied: boolean;
+  appliedAt: string | null;
+  createdAt: string | null;
+};
+
+export type ApiLeaveBalanceRow = {
+  userId: string;
+  name: string;
+  department: string | null;
+  balance: number;
+  used: number;
+  remaining: number;
+};
+
+export type ApiEmployeeDocument = {
+  id: string;
+  userId: string;
+  type: string;
+  label: string;
+  filePath: string;
+  uploadedById: string | null;
+  uploadedByName: string | null;
+  uploadedAt: string | null;
+};
+
+export const hrCenterApi = {
+  dashboard: (token: string) => request<ApiHrDashboard>('GET', '/hr-center/dashboard', undefined, token),
+
+  // Employees
+  listEmployees: (token: string, params: { status?: string; department?: string; q?: string } = {}) =>
+    request<ApiEmployee[]>('GET', `/hr-center/employees${qs(params)}`, undefined, token),
+  showEmployee: (token: string, id: string) =>
+    request<{
+      user: ApiEmployee;
+      payslips: ApiPayslip[];
+      leaveHistory: ApiLeaveRequest[];
+      recentAttendance: ApiAttendanceLogRow[];
+      documents: ApiEmployeeDocument[];
+      increments: ApiSalaryIncrement[];
+    }>('GET', `/hr-center/employees/${id}`, undefined, token),
+  createEmployee: (token: string, body: Record<string, unknown>) =>
+    request<ApiEmployee>('POST', '/hr-center/employees', body, token),
+  updateEmployee: (token: string, id: string, body: Record<string, unknown>) =>
+    request<ApiEmployee>('PATCH', `/hr-center/employees/${id}`, body, token),
+
+  // Documents
+  listDocuments: (token: string, userId: string) =>
+    request<ApiEmployeeDocument[]>('GET', `/hr-center/employees/${userId}/documents`, undefined, token),
+  uploadDocument: (token: string, userId: string, body: { type: string; label: string; file_path: string }) =>
+    request<ApiEmployeeDocument>('POST', `/hr-center/employees/${userId}/documents`, body, token),
+  deleteDocument: (token: string, id: string) =>
+    request<{ message: string }>('DELETE', `/hr-center/documents/${id}`, undefined, token),
+
+  // Attendance
+  attendanceDaily: (token: string, params: { date?: string } = {}) =>
+    request<{ date: string; logs: ApiAttendanceLogRow[] }>('GET', `/hr-center/attendance/daily${qs(params)}`, undefined, token),
+  attendanceMonthly: (token: string, params: { year: number; month: number }) =>
+    request<ApiAttendanceMonthly>('GET', `/hr-center/attendance/monthly${qs(params)}`, undefined, token),
+  attendanceManual: (token: string, body: {
+    user_id: string | number; clock_in_at: string; clock_out_at?: string;
+    status: string; late_minutes?: number; notes?: string;
+  }) => request<ApiAttendanceLogRow>('POST', '/hr-center/attendance/manual', body, token),
+  attendanceUpdate: (token: string, id: string, body: Partial<{
+    clock_in_at: string; clock_out_at: string; status: string; late_minutes: number; notes: string;
+  }>) => request<ApiAttendanceLogRow>('PATCH', `/hr-center/attendance/${id}`, body, token),
+  justifyAttendance: (token: string, id: string, body: {
+    justified: boolean; justification_reason?: string; excuse_document_path?: string;
+  }) => request<ApiAttendanceLogRow>('PATCH', `/hr-center/attendance/${id}/justify`, body, token),
+
+  // Holidays
+  listHolidays: (token: string) => request<ApiPublicHoliday[]>('GET', '/hr-center/holidays', undefined, token),
+  createHoliday: (token: string, body: { date: string; name_ar: string; name_en: string }) =>
+    request<ApiPublicHoliday>('POST', '/hr-center/holidays', body, token),
+  deleteHoliday: (token: string, id: string) =>
+    request<{ message: string }>('DELETE', `/hr-center/holidays/${id}`, undefined, token),
+
+  // Payroll
+  listPayrollRuns: (token: string) => request<ApiPayrollRun[]>('GET', '/hr-center/payroll/runs', undefined, token),
+  showPayrollRun: (token: string, id: string) =>
+    request<{ run: ApiPayrollRun; payslips: ApiPayslip[] }>('GET', `/hr-center/payroll/runs/${id}`, undefined, token),
+  computePayroll: (token: string, body: { year: number; month: number }) =>
+    request<{ run: ApiPayrollRun; payslips: ApiPayslip[] }>('POST', '/hr-center/payroll/compute', body, token),
+  updatePayslip: (token: string, id: string, body: Partial<{ allowances: Record<string, number>; deductions: Record<string, number> }>) =>
+    request<ApiPayslip>('PATCH', `/hr-center/payroll/payslips/${id}`, body, token),
+  approvePayrollRun: (token: string, id: string) =>
+    request<ApiPayrollRun>('POST', `/hr-center/payroll/runs/${id}/approve`, {}, token),
+  payPayslip: (token: string, id: string) =>
+    request<ApiPayslip>('POST', `/hr-center/payroll/payslips/${id}/pay`, {}, token),
+
+  // Increments
+  listIncrements: (token: string, params: { user_id?: string } = {}) =>
+    request<ApiSalaryIncrement[]>('GET', `/hr-center/increments${qs(params)}`, undefined, token),
+  createIncrement: (token: string, body: {
+    user_id: string | number; type: 'annual' | 'promotion' | 'bonus' | 'adjustment';
+    mode: 'amount' | 'percentage'; value: number;
+    effective_date: string; reason?: string;
+  }) => request<ApiSalaryIncrement>('POST', '/hr-center/increments', body, token),
+
+  // Leave balances
+  leaveBalances: (token: string) => request<ApiLeaveBalanceRow[]>('GET', '/hr-center/leave/balances', undefined, token),
+  adjustLeaveBalance: (token: string, userId: string, body: { annual_leave_balance: number; note?: string }) =>
+    request<ApiEmployee>('PATCH', `/hr-center/leave/balances/${userId}`, body, token),
+
+  // Reports
+  reportAbsenceTardiness: (token: string, params: { year: number; month: number }) =>
+    request<{
+      year: number; month: number;
+      rows: Array<{ userId: string; name: string; department: string | null; absenceDays: number; lateCount: number; lateMinutes: number; unjustifiedAbsences: number }>;
+    }>('GET', `/hr-center/reports/absence-tardiness${qs(params)}`, undefined, token),
+  reportPayroll: (token: string, params: { year: number }) =>
+    request<{ year: number; rows: ApiPayrollRun[] }>('GET', `/hr-center/reports/payroll${qs(params)}`, undefined, token),
+};
