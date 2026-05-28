@@ -227,4 +227,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/hr-center/reports/absence-tardiness', [HrCenterController::class, 'reportAbsenceTardiness']);
     Route::get('/hr-center/reports/payroll', [HrCenterController::class, 'reportPayroll']);
+
+    Route::get('/hr-center/settings/work-schedule', [HrCenterController::class, 'workScheduleSettings']);
+    Route::patch('/hr-center/settings/work-schedule', [HrCenterController::class, 'updateWorkScheduleSettings']);
 });

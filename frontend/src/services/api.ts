@@ -1985,4 +1985,13 @@ export const hrCenterApi = {
     }>('GET', `/hr-center/reports/absence-tardiness${qs(params)}`, undefined, token),
   reportPayroll: (token: string, params: { year: number }) =>
     request<{ year: number; rows: ApiPayrollRun[] }>('GET', `/hr-center/reports/payroll${qs(params)}`, undefined, token),
+
+  // Work schedule settings (HR-accessible)
+  workScheduleSettings: (token: string) =>
+    request<ApiWorkScheduleSettings>('GET', '/hr-center/settings/work-schedule', undefined, token),
+  updateWorkScheduleSettings: (token: string, body: Partial<{
+    work_start: string; work_end: string; grace_minutes: number; work_days: string[];
+    late_deduction_per_minute: number; absence_deduction_formula: string;
+    vat_rate: number; employee_insurance_pct: number; employer_insurance_pct: number;
+  }>) => request<ApiWorkScheduleSettings>('PATCH', '/hr-center/settings/work-schedule', body, token),
 };

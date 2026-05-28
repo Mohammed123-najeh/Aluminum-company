@@ -27,7 +27,6 @@ type Section =
   | 'requests'
   | 'hrCenter'
   | 'hrAnalytics'
-  | 'accountantFinance'
   | 'assistant'
   | 'notifications'
   | 'settings';
@@ -106,12 +105,6 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
   }, [isHr, section]);
 
   useEffect(() => {
-    if (!isAccountant && section === 'accountantFinance') {
-      startTransition(() => setSection('overview'));
-    }
-  }, [isAccountant, section]);
-
-  useEffect(() => {
     if (isHr && section === 'inventory') {
       startTransition(() => setSection('overview'));
     }
@@ -125,8 +118,9 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
 
   useEffect(() => {
     if (!token) return;
-    if (section !== 'requests' && section !== 'hrCenter' && section !== 'hrAnalytics' && section !== 'accountantFinance')
-      return;
+    const needsFreshUser = section === 'requests' || section === 'hrCenter' || section === 'hrAnalytics'
+      || (isAccountant && section === 'overview');
+    if (!needsFreshUser) return;
     auth
       .me(token)
       .then((u) => setCurrentUser(u))
@@ -162,7 +156,7 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
 
         <nav className="flex-1 space-y-1 px-3 py-4">
           <NavItem
-            label={isHr ? 'HR overview' : t('employeeOverview')}
+            label={isHr ? 'HR overview' : isAccountant ? t('accountantFinanceNav') : t('employeeOverview')}
             active={section === 'overview'}
             onClick={() => go('overview')}
             icon={
@@ -217,22 +211,6 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
               </svg>
             }
           />
-          {isAccountant && (
-            <NavItem
-              label={t('accountantFinanceNav')}
-              active={section === 'accountantFinance'}
-              onClick={() => go('accountantFinance')}
-              icon={
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m0-12.75H21m-4.5 3.75h3.375c.621 0 1.125.504 1.125 1.125V18a2.25 2.25 0 01-2.25 2.25M16.5 7.5V18a2.25 2.25 0 002.25 2.25M16.5 7.5V4.875c0-.621-.504-1.125-1.125-1.125H4.125C3.504 3.75 3 4.254 3 4.875V18a2.25 2.25 0 002.25 2.25h13.5M18 10.5h.008v.008H18V10.5z"
-                  />
-                </svg>
-              }
-            />
-          )}
           {isHr && (
             <>
               <NavItem
@@ -330,14 +308,13 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <h1 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-            {section === 'overview' && (isHr ? 'HR overview' : t('employeeOverview'))}
+            {section === 'overview' && (isHr ? 'HR overview' : isAccountant ? t('accountantFinanceTitle') : t('employeeOverview'))}
             {section === 'tasks' && t('myTasks')}
             {section === 'messages' && t('messages')}
             {section === 'inventory' && t('inventory')}
             {section === 'requests' && t('myRequestsTitle')}
             {section === 'hrCenter' && t('hrCenterTitle')}
             {section === 'hrAnalytics' && t('hrAnalyticsTitle')}
-            {section === 'accountantFinance' && t('accountantFinanceTitle')}
             {section === 'assistant' && t('aiAssistantNav')}
             {section === 'notifications' && t('notificationsTitle')}
             {section === 'settings' && t('settings')}
@@ -377,6 +354,8 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
           <SectionPanel active={section === 'overview'}>
             {isHr ? (
               <HrOverviewPanel />
+            ) : isAccountant ? (
+              <AccountantFinancePanel />
             ) : (
             <EmployeeAnalytics
               tasks={tasks}
@@ -430,11 +409,6 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
                 <HrAnalyticsPanel />
               </SectionPanel>
             </>
-          )}
-          {isAccountant && (
-            <SectionPanel active={section === 'accountantFinance'}>
-              <AccountantFinancePanel />
-            </SectionPanel>
           )}
           <SectionPanel active={section === 'assistant'}>
             <AiAssistantPanel

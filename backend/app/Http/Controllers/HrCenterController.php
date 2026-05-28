@@ -686,4 +686,24 @@ class HrCenterController extends Controller
         $rows = PayrollRun::where('year', $year)->orderBy('month')->get()->map->toApiArray();
         return response()->json(['year' => $year, 'rows' => $rows]);
     }
+
+    // ===== Work schedule settings (HR-accessible mirror of the finance endpoint) =====
+
+    public function workScheduleSettings(Request $request)
+    {
+        if ($r = $this->gate($request)) return $r;
+        return response()->json(WorkScheduleSetting::current()->toApiArray());
+    }
+
+    public function updateWorkScheduleSettings(Request $request)
+    {
+        if ($r = $this->gate($request)) return $r;
+        $s = WorkScheduleSetting::current();
+        $s->update($request->only([
+            'work_start', 'work_end', 'grace_minutes', 'work_days',
+            'late_deduction_per_minute', 'absence_deduction_formula',
+            'vat_rate', 'employee_insurance_pct', 'employer_insurance_pct',
+        ]));
+        return response()->json($s->fresh()->toApiArray());
+    }
 }

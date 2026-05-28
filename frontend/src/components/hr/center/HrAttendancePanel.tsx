@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../../contexts/AppContext';
-import { hrCenterApi, type ApiAttendanceLogRow, type ApiAttendanceMonthly, type ApiEmployee, type ApiPublicHoliday, type ApiWorkScheduleSettings, financeCenterApi } from '../../../services/api';
+import { hrCenterApi, type ApiAttendanceLogRow, type ApiAttendanceMonthly, type ApiEmployee, type ApiPublicHoliday, type ApiWorkScheduleSettings } from '../../../services/api';
 import { DataTable, Field, inputClass, StatusBadge, type Column } from '../../shared/dash';
 
 type Tab = 'daily' | 'monthly' | 'manual' | 'settings';
@@ -293,7 +293,7 @@ const SettingsTab: React.FC = () => {
   const load = useCallback(async () => {
     if (!token) return;
     const [s, h] = await Promise.all([
-      financeCenterApi.workScheduleSettings(token),
+      hrCenterApi.workScheduleSettings(token),
       hrCenterApi.listHolidays(token),
     ]);
     setSettings(s); setHolidays(h);
@@ -305,7 +305,7 @@ const SettingsTab: React.FC = () => {
     if (!token || !settings) return;
     setSavingSettings(true);
     try {
-      await financeCenterApi.updateWorkScheduleSettings(token, {
+      await hrCenterApi.updateWorkScheduleSettings(token, {
         work_start: settings.workStart + ':00',
         work_end: settings.workEnd + ':00',
         grace_minutes: settings.graceMinutes,
