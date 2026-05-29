@@ -1726,6 +1726,10 @@ export const financeCenterApi = {
   // Debts
   aging: (token: string) => request<ApiAging>('GET', '/finance/aging', undefined, token),
 
+  // Advances (read-only view of employee salary-advance requests)
+  advances: (token: string, params: { status?: string } = {}) =>
+    request<ApiDebitRequest[]>('GET', `/finance/advances${qs(params)}`, undefined, token),
+
   // Reports
   reportPnl: (token: string, params: { from?: string; to?: string } = {}) =>
     request<{ from: string; to: string; totals: { revenue: number; expenses: number; net: number }; byMonth: Array<{ month: string; type: string; total: number }> }>(

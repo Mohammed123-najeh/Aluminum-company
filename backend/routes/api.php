@@ -183,6 +183,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/finance/payment-vouchers', [FinanceCenterController::class, 'storePaymentVoucher']);
 
     Route::get('/finance/aging', [FinanceCenterController::class, 'aging']);
+    Route::get('/finance/advances', [FinanceCenterController::class, 'advances']);
 
     Route::get('/finance/reports/pnl', [FinanceCenterController::class, 'reportPnl']);
     Route::get('/finance/reports/expense-breakdown', [FinanceCenterController::class, 'reportExpenseBreakdown']);

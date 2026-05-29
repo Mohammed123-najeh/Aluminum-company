@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\CustomerInvoice;
 use App\Models\CustomerInvoiceItem;
+use App\Models\EmployeeDebitRequest;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\FinanceTransaction;
@@ -690,6 +691,20 @@ class FinanceCenterController extends Controller
 
             return response()->json($v->fresh('allocations')->toApiArray(), 201);
         });
+    }
+
+    // ===== Advances (read-only view of employee salary-advance requests) =====
+
+    public function advances(Request $request)
+    {
+        if ($r = $this->gate($request)) return $r;
+        $q = EmployeeDebitRequest::query()
+            ->with('user:id,name,email', 'decidedBy:id,name')
+            ->orderByDesc('created_at');
+        if ($request->filled('status')) {
+            $q->where('status', (string) $request->query('status'));
+        }
+        return response()->json($q->get()->map(fn ($row) => $row->toApiArray())->values());
     }
 
     // ===== Debts / Aging =====

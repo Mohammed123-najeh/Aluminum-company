@@ -69,8 +69,8 @@ export const MiniChart: React.FC<Props> = (props) => {
           ))}
         </div>
         <div className="mt-1 flex justify-between text-[10px] text-slate-400">
-          {labels.map((l) => (
-            <span key={l} className="truncate">{l}</span>
+          {labels.map((l, i) => (
+            <span key={i} className="truncate">{l}</span>
           ))}
         </div>
       </div>
@@ -85,7 +85,7 @@ export const MiniChart: React.FC<Props> = (props) => {
         {labels.map((l, i) => {
           const pct = (values[i] / max) * 100;
           return (
-            <div key={l} className="flex items-center gap-2 text-[12px]">
+            <div key={i} className="flex items-center gap-2 text-[12px]">
               <span className="w-28 shrink-0 truncate text-slate-600 dark:text-slate-300">{l}</span>
               <div className="relative h-3 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                 <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
@@ -135,7 +135,7 @@ export const MiniChart: React.FC<Props> = (props) => {
           ))}
         </div>
         <div className="mt-1 flex justify-between text-[10px] text-slate-400">
-          {labels.map((l) => <span key={l}>{l}</span>)}
+          {labels.map((l, i) => <span key={i}>{l}</span>)}
         </div>
       </div>
     );

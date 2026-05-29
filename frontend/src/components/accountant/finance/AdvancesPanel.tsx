@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../../contexts/AppContext';
-import { debitRequestsApi, type ApiDebitRequest } from '../../../services/api';
+import { financeCenterApi, type ApiDebitRequest } from '../../../services/api';
 import { formatIls } from '../../../utils/currency';
 import { DataTable, KpiCard, SectionHeader, StatusBadge, type Column } from '../../shared/dash';
 
@@ -13,7 +13,7 @@ export const AdvancesPanel: React.FC = () => {
   const load = useCallback(async () => {
     if (!token) return;
     setLoading(true); setErr(null);
-    try { setRows(await debitRequestsApi.listHr(token)); }
+    try { setRows(await financeCenterApi.advances(token)); }
     catch (e) { setErr(e instanceof Error ? e.message : 'Failed'); }
     finally { setLoading(false); }
   }, [token]);
