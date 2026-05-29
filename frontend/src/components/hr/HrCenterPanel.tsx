@@ -1,44 +1,58 @@
 import React, { useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
-import { InnerSidebar, type InnerNavItem } from '../shared/dash';
+import { CenterHeader, TabBar, type TabItem } from '../shared/dash';
+import { HrOverviewTab } from './center/HrOverviewTab';
 import { HrEmployeesPanel } from './center/HrEmployeesPanel';
 import { HrAttendancePanel } from './center/HrAttendancePanel';
-import { HrPayrollPanel } from './center/HrPayrollPanel';
+import { HrPayrollPanel, IncrementsTab } from './center/HrPayrollPanel';
 import { HrLeavePanel } from './center/HrLeavePanel';
 import { HrAbsenceTardinessPanel } from './center/HrAbsenceTardinessPanel';
+import { HrReportsPanel } from './center/HrReportsPanel';
 
-type Section = 'employees' | 'attendance' | 'payroll' | 'leaves' | 'absences';
-
-const Icon = {
-  employees: <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-7 9a7 7 0 1 1 14 0H3Z" /></svg>,
-  attendance: <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm.75-12a.75.75 0 0 0-1.5 0v4c0 .2.08.39.22.53l2.5 2.5a.75.75 0 1 0 1.06-1.06L10.75 9.69V6Z" clipRule="evenodd" /></svg>,
-  payroll: <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1H3V5Zm0 3v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8H3Z" /></svg>,
-  leaves: <svg viewBox="0 0 20 20" fill="currentColor"><path d="M5 3a1 1 0 0 1 1 1v1h8V4a1 1 0 1 1 2 0v1h1a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h1V4a1 1 0 0 1 1-1Zm-2 6v7h14V9H3Z" /></svg>,
-  absences: <svg viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 2a8 8 0 1 1 0 16 8 8 0 0 1 0-16Zm-1 4a1 1 0 1 1 2 0v5a1 1 0 1 1-2 0V6Zm1 8a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z" clipRule="evenodd" /></svg>,
-};
+type Section = 'overview' | 'employees' | 'attendance' | 'payroll' | 'leaves' | 'increments' | 'absences' | 'reports';
 
 export const HrCenterPanel: React.FC = () => {
   const { t } = useApp();
-  const [section, setSection] = useState<Section>('employees');
+  const [section, setSection] = useState<Section>('overview');
 
-  const items: InnerNavItem<Section>[] = [
-    { key: 'employees', label: t('hr.nav.employees'), icon: Icon.employees },
-    { key: 'attendance', label: t('hr.nav.attendance'), icon: Icon.attendance },
-    { key: 'payroll', label: t('hr.nav.payroll'), icon: Icon.payroll },
-    { key: 'leaves', label: t('hr.nav.leaves'), icon: Icon.leaves },
-    { key: 'absences', label: t('hr.nav.absences'), icon: Icon.absences },
+  const tabs: TabItem<Section>[] = [
+    { key: 'overview', label: t('hr.tab.overview') },
+    { key: 'employees', label: t('hr.nav.employees') },
+    { key: 'attendance', label: t('hr.nav.attendance') },
+    { key: 'payroll', label: t('hr.nav.payroll') },
+    { key: 'leaves', label: t('hr.nav.leaves') },
+    { key: 'increments', label: t('hr.payroll.tab.increments') },
+    { key: 'absences', label: t('hr.nav.absences') },
+    { key: 'reports', label: t('hr.nav.reports') },
   ];
 
+  const actions = (
+    <>
+      <button type="button" onClick={() => setSection('employees')} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+        + {t('hr.action.addEmployee')}
+      </button>
+      <button type="button" onClick={() => setSection('attendance')} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+        {t('hr.action.attendanceReport')}
+      </button>
+      <button type="button" onClick={() => setSection('reports')} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+        {t('hr.action.payrollReport')}
+      </button>
+    </>
+  );
+
   return (
-    <div className="flex gap-4">
-      <InnerSidebar items={items} active={section} onChange={setSection} title={t('hrCenterTitle')} />
-      <div className="min-w-0 flex-1">
-        {section === 'employees' && <HrEmployeesPanel />}
-        {section === 'attendance' && <HrAttendancePanel />}
-        {section === 'payroll' && <HrPayrollPanel />}
-        {section === 'leaves' && <HrLeavePanel />}
-        {section === 'absences' && <HrAbsenceTardinessPanel />}
-      </div>
+    <div>
+      <CenterHeader title={t('hr.center.title')} subtitle={t('hr.center.subtitle')} actions={actions} />
+      <TabBar items={tabs} active={section} onChange={setSection} />
+
+      {section === 'overview' && <HrOverviewTab />}
+      {section === 'employees' && <HrEmployeesPanel />}
+      {section === 'attendance' && <HrAttendancePanel />}
+      {section === 'payroll' && <HrPayrollPanel />}
+      {section === 'leaves' && <HrLeavePanel />}
+      {section === 'increments' && <IncrementsTab />}
+      {section === 'absences' && <HrAbsenceTardinessPanel />}
+      {section === 'reports' && <HrReportsPanel />}
     </div>
   );
 };

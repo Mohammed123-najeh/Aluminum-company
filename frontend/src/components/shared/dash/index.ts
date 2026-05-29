@@ -10,3 +10,6 @@ export { StatusBadge } from './StatusBadge';
 export { FilterBar } from './FilterBar';
 export { InnerSidebar } from './InnerSidebar';
 export type { InnerNavItem } from './InnerSidebar';
+export { CenterHeader } from './CenterHeader';
+export { TabBar } from './TabBar';
+export type { TabItem } from './TabBar';

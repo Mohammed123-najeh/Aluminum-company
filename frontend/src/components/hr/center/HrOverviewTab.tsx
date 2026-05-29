@@ -2,9 +2,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../../contexts/AppContext';
 import { hrCenterApi, type ApiHrDashboard } from '../../../services/api';
 import { formatIls } from '../../../utils/currency';
-import { KpiCard, MiniChart, DataTable, SectionHeader, StatusBadge, COLORS, type Column } from '../../shared/dash';
+import { KpiCard, MiniChart, DataTable, StatusBadge, COLORS, type Column } from '../../shared/dash';
 
-export const HrDashboard: React.FC = () => {
+export const HrOverviewTab: React.FC = () => {
   const { token, t } = useApp();
   const [data, setData] = useState<ApiHrDashboard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -24,6 +24,9 @@ export const HrDashboard: React.FC = () => {
   if (err) return <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{err}</div>;
   if (!data) return null;
 
+  const k = data.kpi;
+  const empUnit = t('hr.kpi.unit.employee');
+
   const liveCols: Column<ApiHrDashboard['liveAttendance'][number]>[] = [
     { key: 'name', header: t('hr.employees.col.name'), render: (r) => r.userName ?? '—' },
     { key: 'dept', header: t('hr.employees.col.department'), render: (r) => r.department ?? '—', hideOnMobile: true },
@@ -34,14 +37,16 @@ export const HrDashboard: React.FC = () => {
 
   return (
     <div className="space-y-5">
-      <SectionHeader title={t('hr.dashboard.title')} />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard label={t('hr.dashboard.kpi.total')} value={`${k.totalEmployees} ${empUnit}`} tone="accent" />
+        <KpiCard label={t('hr.dashboard.kpi.present')} value={`${k.presentToday} ${empUnit}`} tone="positive" hint={`${Math.round((k.presentToday / Math.max(1, k.totalEmployees)) * 100)}%`} />
+        <KpiCard label={t('hr.dashboard.kpi.absent')} value={`${k.absentToday} ${empUnit}`} tone="danger" hint={`${Math.round((k.absentToday / Math.max(1, k.totalEmployees)) * 100)}%`} />
+        <KpiCard label={t('hr.dashboard.kpi.late')} value={`${k.lateToday} ${empUnit}`} tone="warning" />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <KpiCard label={t('hr.dashboard.kpi.total')} value={data.kpi.totalEmployees} tone="accent" />
-        <KpiCard label={t('hr.dashboard.kpi.present')} value={data.kpi.presentToday} tone="positive" hint={`${Math.round((data.kpi.presentToday / Math.max(1, data.kpi.totalEmployees)) * 100)}%`} />
-        <KpiCard label={t('hr.dashboard.kpi.absent')} value={data.kpi.absentToday} tone="danger" />
-        <KpiCard label={t('hr.dashboard.kpi.pendingLeave')} value={data.kpi.pendingLeave} tone="warning" />
-        <KpiCard label={t('hr.dashboard.kpi.monthlyPayroll')} value={formatIls(data.kpi.monthlyPayroll)} tone="neutral" />
+        <KpiCard label={t('hr.dashboard.kpi.pendingLeaveRequests')} value={`${k.pendingLeaveRequests} ${t('hr.kpi.unit.request')}`} tone="warning" />
+        <KpiCard label={t('hr.dashboard.kpi.monthlyPayroll')} value={formatIls(k.monthlyPayroll)} tone="accent" />
+        <KpiCard label={t('hr.dashboard.kpi.dailyPayroll')} value={formatIls(k.dailyPayroll)} tone="positive" />
+        <KpiCard label={t('hr.dashboard.kpi.workHoursToday')} value={`${k.workHoursToday} ${t('hr.kpi.unit.hour')}`} tone="neutral" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

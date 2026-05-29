@@ -37,6 +37,7 @@ class FinanceCenterController extends Controller
 
         $now = Carbon::now();
         $monthStart = $now->copy()->startOfMonth();
+        $today = $now->copy()->toDateString();
         $lastMonthStart = $now->copy()->subMonth()->startOfMonth();
         $lastMonthEnd = $now->copy()->subMonth()->endOfMonth();
 
@@ -44,12 +45,18 @@ class FinanceCenterController extends Controller
             ->whereBetween('date', [$monthStart, $now])->sum('amount');
         $revenueLastMonth = (float) FinanceTransaction::where('type', 'revenue')
             ->whereBetween('date', [$lastMonthStart, $lastMonthEnd])->sum('amount');
+        $revenueToday = (float) FinanceTransaction::where('type', 'revenue')->whereDate('date', $today)->sum('amount');
         $expensesMonth = (float) FinanceTransaction::where('type', 'payment')
             ->whereBetween('date', [$monthStart, $now])->sum('amount');
         $expensesLastMonth = (float) FinanceTransaction::where('type', 'payment')
             ->whereBetween('date', [$lastMonthStart, $lastMonthEnd])->sum('amount');
+        $expensesToday = (float) FinanceTransaction::where('type', 'payment')->whereDate('date', $today)->sum('amount');
 
         $receivables = (float) CustomerInvoice::whereNotIn('status', ['paid', 'cancelled'])->sum('balance');
+
+        // Orders / invoices with outstanding balance (incomplete payment)
+        $incompletePaymentCount = CustomerInvoice::whereNotIn('status', ['paid', 'cancelled'])
+            ->where('balance', '>', 0)->count();
 
         // 12-month trend
         $trend = [];
@@ -98,9 +105,13 @@ class FinanceCenterController extends Controller
         return response()->json([
             'kpi' => [
                 'revenue' => ['value' => $revenueMonth, 'prev' => $revenueLastMonth],
+                'revenueToday' => ['value' => $revenueToday, 'prev' => 0],
                 'expenses' => ['value' => $expensesMonth, 'prev' => $expensesLastMonth],
+                'expensesToday' => ['value' => $expensesToday, 'prev' => 0],
                 'net' => ['value' => $revenueMonth - $expensesMonth, 'prev' => $revenueLastMonth - $expensesLastMonth],
+                'netToday' => ['value' => $revenueToday - $expensesToday, 'prev' => 0],
                 'receivables' => ['value' => $receivables, 'prev' => $receivables],
+                'incompletePaymentCount' => $incompletePaymentCount,
             ],
             'trend' => $trend,
             'byCategory' => $byCategory,

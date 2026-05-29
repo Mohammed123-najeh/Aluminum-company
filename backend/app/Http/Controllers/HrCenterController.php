@@ -41,11 +41,23 @@ class HrCenterController extends Controller
         $presentToday = AttendanceLog::whereDate('clock_in_at', $today)
             ->where('status', '!=', 'absent')->distinct('user_id')->count('user_id');
         $absentToday = max(0, $totalEmployees - $presentToday);
+        $lateToday = AttendanceLog::whereDate('clock_in_at', $today)->where('status', 'late')->count();
         $pendingLeave = LeaveRequest::where('status', 'pending')->count();
 
-        // Approximate monthly payroll = sum of active base salaries
-        $monthlyPayroll = (float) User::where('role', '!=', 'admin')
-            ->where('status', 'active')->sum('base_salary');
+        // Work hours logged today (sum of minutes_worked → hours)
+        $minutesToday = (int) AttendanceLog::whereDate('clock_in_at', $today)->sum('minutes_worked');
+        $workHoursToday = round($minutesToday / 60, 1);
+
+        // Monthly payroll = sum of active base salaries + allowances; daily ≈ monthly / 22 working days.
+        $activeStaff = User::where('role', '!=', 'admin')->where('status', 'active')->get(['base_salary', 'allowances']);
+        $monthlyPayroll = 0.0;
+        foreach ($activeStaff as $u) {
+            $monthlyPayroll += (float) ($u->base_salary ?? 0);
+            foreach (($u->allowances ?? []) as $v) {
+                $monthlyPayroll += (float) $v;
+            }
+        }
+        $dailyPayroll = round($monthlyPayroll / 22, 2);
 
         // Weekly attendance line
         $weekly = [];
@@ -88,8 +100,12 @@ class HrCenterController extends Controller
                 'totalEmployees' => $totalEmployees,
                 'presentToday' => $presentToday,
                 'absentToday' => $absentToday,
+                'lateToday' => $lateToday,
                 'pendingLeave' => $pendingLeave,
+                'pendingLeaveRequests' => $pendingLeave,
+                'workHoursToday' => $workHoursToday,
                 'monthlyPayroll' => $monthlyPayroll,
+                'dailyPayroll' => $dailyPayroll,
             ],
             'weekly' => $weekly,
             'byDepartment' => $byDept,

@@ -4,7 +4,7 @@ import { hrCenterApi, type ApiPayrollRun, type ApiPayslip, type ApiSalaryIncreme
 import { formatIls } from '../../../utils/currency';
 import { DataTable, FormModal, Field, inputClass, KpiCard, StatusBadge, type Column } from '../../shared/dash';
 
-type Tab = 'run' | 'history' | 'increments' | 'settings';
+type Tab = 'run' | 'history' | 'settings';
 
 export const HrPayrollPanel: React.FC = () => {
   const { t } = useApp();
@@ -13,7 +13,6 @@ export const HrPayrollPanel: React.FC = () => {
   const tabs: Array<{ key: Tab; label: string }> = [
     { key: 'run', label: t('hr.payroll.tab.run') },
     { key: 'history', label: t('hr.payroll.tab.history') },
-    { key: 'increments', label: t('hr.payroll.tab.increments') },
     { key: 'settings', label: t('hr.payroll.tab.settings') },
   ];
 
@@ -29,7 +28,6 @@ export const HrPayrollPanel: React.FC = () => {
 
       {tab === 'run' && <RunTab />}
       {tab === 'history' && <HistoryTab />}
-      {tab === 'increments' && <IncrementsTab />}
       {tab === 'settings' && <SettingsTab />}
     </div>
   );
@@ -221,7 +219,7 @@ const HistoryTab: React.FC = () => {
   );
 };
 
-const IncrementsTab: React.FC = () => {
+export const IncrementsTab: React.FC = () => {
   const { token, t } = useApp();
   const [rows, setRows] = useState<ApiSalaryIncrement[]>([]);
   const [employees, setEmployees] = useState<ApiEmployee[]>([]);

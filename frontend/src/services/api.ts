@@ -1445,7 +1445,16 @@ export const attendanceApi = {
 
 export type ApiFinanceKpi = { value: number; prev: number };
 export type ApiFinanceDashboard = {
-  kpi: { revenue: ApiFinanceKpi; expenses: ApiFinanceKpi; net: ApiFinanceKpi; receivables: ApiFinanceKpi };
+  kpi: {
+    revenue: ApiFinanceKpi;
+    revenueToday: ApiFinanceKpi;
+    expenses: ApiFinanceKpi;
+    expensesToday: ApiFinanceKpi;
+    net: ApiFinanceKpi;
+    netToday: ApiFinanceKpi;
+    receivables: ApiFinanceKpi;
+    incompletePaymentCount: number;
+  };
   trend: Array<{ month: string; revenue: number; expenses: number }>;
   byCategory: Array<{ categoryId: string; nameAr: string | null; nameEn: string | null; total: number }>;
   recent: ApiFinanceTransaction[];
@@ -1744,8 +1753,12 @@ export type ApiHrDashboard = {
     totalEmployees: number;
     presentToday: number;
     absentToday: number;
+    lateToday: number;
     pendingLeave: number;
+    pendingLeaveRequests: number;
+    workHoursToday: number;
     monthlyPayroll: number;
+    dailyPayroll: number;
   };
   weekly: Array<{ date: string; present: number; late: number; absent: number }>;
   byDepartment: Array<{ label: string; count: number }>;

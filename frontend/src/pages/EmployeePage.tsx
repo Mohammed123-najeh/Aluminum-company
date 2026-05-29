@@ -8,8 +8,6 @@ import { EmployeeInventory } from '../components/employee/EmployeeInventory';
 import { EmployeeAnalytics } from '../components/employee/EmployeeAnalytics';
 import { EmployeeRequestsPanel } from '../components/employee/EmployeeRequestsPanel';
 import { HrCenterPanel } from '../components/hr/HrCenterPanel';
-import { HrAnalyticsPanel } from '../components/hr/HrAnalyticsPanel';
-import { HrOverviewPanel } from '../components/hr/HrOverviewPanel';
 import { AccountantFinancePanel } from '../components/accountant/AccountantFinancePanel';
 import { SettingsModal } from '../components/admin/SettingsModal';
 import { SectionPanel } from '../components/SectionPanel';
@@ -25,8 +23,6 @@ type Section =
   | 'messages'
   | 'inventory'
   | 'requests'
-  | 'hrCenter'
-  | 'hrAnalytics'
   | 'assistant'
   | 'notifications'
   | 'settings';
@@ -96,9 +92,6 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
   const isAccountant = currentUser?.employeeType === 'accountant';
 
   useEffect(() => {
-    if (!isHr && (section === 'hrCenter' || section === 'hrAnalytics')) {
-      startTransition(() => setSection('overview'));
-    }
     if (isHr && section === 'tasks') {
       startTransition(() => setSection('overview'));
     }
@@ -118,8 +111,8 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
 
   useEffect(() => {
     if (!token) return;
-    const needsFreshUser = section === 'requests' || section === 'hrCenter' || section === 'hrAnalytics'
-      || (isAccountant && section === 'overview');
+    const needsFreshUser = section === 'requests'
+      || ((isAccountant || isHr) && section === 'overview');
     if (!needsFreshUser) return;
     auth
       .me(token)
@@ -127,7 +120,7 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
       .catch(() => {
         /* session handled elsewhere */
       });
-  }, [section, token, setCurrentUser]);
+  }, [section, token, setCurrentUser, isAccountant, isHr]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-100 dark:bg-slate-950">
@@ -156,7 +149,7 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
 
         <nav className="flex-1 space-y-1 px-3 py-4">
           <NavItem
-            label={isHr ? 'HR overview' : isAccountant ? t('accountantFinanceNav') : t('employeeOverview')}
+            label={isHr ? t('hr.center.title') : isAccountant ? t('fin.center.title') : t('employeeOverview')}
             active={section === 'overview'}
             onClick={() => go('overview')}
             icon={
@@ -211,38 +204,6 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
               </svg>
             }
           />
-          {isHr && (
-            <>
-              <NavItem
-                label={t('employeeNavHrCenter')}
-                active={section === 'hrCenter'}
-                onClick={() => go('hrCenter')}
-                icon={
-                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"
-                    />
-                  </svg>
-                }
-              />
-              <NavItem
-                label={t('employeeNavHrAnalytics')}
-                active={section === 'hrAnalytics'}
-                onClick={() => go('hrAnalytics')}
-                icon={
-                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v7.125C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"
-                    />
-                  </svg>
-                }
-              />
-            </>
-          )}
           <NavItem
             label={t('aiAssistantNav')}
             active={section === 'assistant'}
@@ -308,13 +269,11 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <h1 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-            {section === 'overview' && (isHr ? 'HR overview' : isAccountant ? t('accountantFinanceTitle') : t('employeeOverview'))}
+            {section === 'overview' && (isHr ? t('hr.center.title') : isAccountant ? t('fin.center.title') : t('employeeOverview'))}
             {section === 'tasks' && t('myTasks')}
             {section === 'messages' && t('messages')}
             {section === 'inventory' && t('inventory')}
             {section === 'requests' && t('myRequestsTitle')}
-            {section === 'hrCenter' && t('hrCenterTitle')}
-            {section === 'hrAnalytics' && t('hrAnalyticsTitle')}
             {section === 'assistant' && t('aiAssistantNav')}
             {section === 'notifications' && t('notificationsTitle')}
             {section === 'settings' && t('settings')}
@@ -353,7 +312,7 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
         <main className="flex-1 overflow-auto p-6">
           <SectionPanel active={section === 'overview'}>
             {isHr ? (
-              <HrOverviewPanel />
+              <HrCenterPanel />
             ) : isAccountant ? (
               <AccountantFinancePanel />
             ) : (
@@ -400,16 +359,6 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
           <SectionPanel active={section === 'requests'}>
             <EmployeeRequestsPanel />
           </SectionPanel>
-          {isHr && (
-            <>
-              <SectionPanel active={section === 'hrCenter'}>
-                <HrCenterPanel />
-              </SectionPanel>
-              <SectionPanel active={section === 'hrAnalytics'}>
-                <HrAnalyticsPanel />
-              </SectionPanel>
-            </>
-          )}
           <SectionPanel active={section === 'assistant'}>
             <AiAssistantPanel
               viewerRole="employee"
