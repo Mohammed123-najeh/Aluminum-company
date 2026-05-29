@@ -642,7 +642,7 @@ class HrCenterController extends Controller
         if ($r = $this->gate($request)) return $r;
         $users = User::where('role', '!=', 'admin')->where('status', 'active')->orderBy('name')->get();
         $rows = $users->map(function ($u) {
-            $used = LeaveRequest::where('user_id', $u->id)->where('status', 'approved')->sum('days');
+            $used = LeaveRequest::where('user_id', $u->id)->where('status', 'approved')->sum('days_count');
             $balance = (float) ($u->annual_leave_balance ?? 0);
             return [
                 'userId' => (string) $u->id,
