@@ -324,6 +324,10 @@ export type ApiTask = {
     id: string;
     status: string;
     customerReference: string | null;
+    totalAmount: number | null;
+    amountPaid: number;
+    balanceDue: number | null;
+    paymentStatus: 'paid' | 'partial' | 'unpaid' | 'unknown';
     items: ApiTaskOrderItem[];
   } | null;
   attachments?: ApiTaskAttachment[];
@@ -343,6 +347,11 @@ export type CreateTaskPayload = {
   customer_phone?: string | null;
   client_id?: string | null;
   order_id?: string | null;
+  /** Order total. When set without an order_id, the backend auto-creates an Order
+   *  so the money side flows through the accountant's Orders + Receipts pipeline. */
+  total_amount?: number | null;
+  /** How much the customer has already paid against the order total. */
+  amount_paid?: number | null;
 };
 
 export type UpdateTaskPayload = {
@@ -888,6 +897,22 @@ export type ApiClientOrder = {
   payments: ApiClientOrderPayment[];
 };
 
+export type ApiClientTask = {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  dueDate: string | null;
+  orderId: string | null;
+  orderStatus: string | null;
+  totalAmount: number | null;
+  amountPaid: number;
+  balanceDue: number | null;
+  paymentStatus: 'paid' | 'partial' | 'unpaid' | 'unknown';
+  assignees: Array<{ id: string; name: string }>;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ApiClientDetailResponse = {
   client: ApiClient;
   analytics: {
@@ -901,6 +926,7 @@ export type ApiClientDetailResponse = {
     lastPaymentAt: string | null;
   };
   orders: ApiClientOrder[];
+  tasks: ApiClientTask[];
 };
 
 export const clientsApi = {

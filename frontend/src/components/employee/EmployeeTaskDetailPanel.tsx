@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import type { ApiTask, TaskStatus } from '../../services/api';
 import { taskDueBucket } from '../../utils/taskDates';
+import { stripCustomOrderFence } from '../../utils/taskDescription';
 
 /** Assignees may only set in progress or completed (supervisor sets cancelled / pending). */
 const ASSIGNEE_STATUS_OPTIONS: TaskStatus[] = ['in_progress', 'completed'];
@@ -170,17 +171,20 @@ export const EmployeeTaskDetailPanel: React.FC<Props> = ({
               </div>
             </section>
 
-            {task.description && (
-              <section className={sectionShell}>
-                <h3 className={sectionTitle}>
-                  <svg className="h-3.5 w-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m6.75 12l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                  {t('description')}
-                </h3>
-                <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700 dark:text-slate-300">{task.description}</p>
-              </section>
-            )}
+            {(() => {
+              const desc = stripCustomOrderFence(task.description);
+              return desc ? (
+                <section className={sectionShell}>
+                  <h3 className={sectionTitle}>
+                    <svg className="h-3.5 w-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m6.75 12l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    {t('description')}
+                  </h3>
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700 dark:text-slate-300">{desc}</p>
+                </section>
+              ) : null;
+            })()}
 
             {task.order && (
               <section className="rounded-2xl border border-indigo-200/90 bg-gradient-to-br from-indigo-50/90 to-white p-4 shadow-sm dark:border-indigo-900/60 dark:from-indigo-950/40 dark:to-slate-900/80">

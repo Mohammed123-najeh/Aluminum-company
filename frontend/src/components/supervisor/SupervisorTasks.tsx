@@ -4,6 +4,7 @@ import type { User } from '../../types/user';
 import type { ApiTask, TaskStatus } from '../../services/api';
 import { TaskModal } from './TaskModal';
 import { CustomOrderModal } from './CustomOrderModal';
+import { TaskDescription } from './TaskDescription';
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   pending: 'taskStatusPending',
@@ -177,9 +178,7 @@ export const SupervisorTasks: React.FC<Props> = ({
                   {t(STATUS_LABELS[task.status] as Parameters<typeof t>[0])}
                 </span>
               </div>
-              {task.description && (
-                <p className="mt-1.5 line-clamp-2 text-sm text-slate-600 dark:text-slate-400">{task.description}</p>
-              )}
+              <TaskDescription description={task.description} clamp className="mt-1.5" />
               {task.customerName && (
                 <p className="mt-1 text-xs font-medium text-indigo-600 dark:text-indigo-400">
                   {t('taskCustomerNameLabel')}: {task.customerName}

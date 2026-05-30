@@ -62,6 +62,8 @@ class TaskController extends Controller
             'customer_phone' => 'nullable|string|max:64',
             'client_id' => 'nullable|exists:clients,id',
             'order_id' => 'nullable|exists:orders,id',
+            'total_amount' => 'nullable|numeric|min:0',
+            'amount_paid' => 'nullable|numeric|min:0',
         ]);
 
         if (! empty($data['client_id'])) {
@@ -82,6 +84,26 @@ class TaskController extends Controller
             }
         }
 
+        $totalAmount = isset($data['total_amount']) ? (float) $data['total_amount'] : null;
+        $amountPaid = isset($data['amount_paid']) ? (float) $data['amount_paid'] : null;
+
+        // If the supervisor entered a total but didn't pick an existing order, mint one so the
+        // task's money side flows through the accountant's normal Orders + Receipts pipeline.
+        $orderId = $data['order_id'] ?? null;
+        if (!$orderId && $totalAmount !== null && $totalAmount > 0) {
+            $newOrder = Order::create([
+                'creator_id' => $user->id,
+                'supervisor_id' => $user->id,
+                'client_id' => $data['client_id'] ?? null,
+                'status' => 'draft',
+                'customer_reference' => $data['customer_name'] ?? null,
+                'total_amount' => $totalAmount,
+                'amount_paid' => $amountPaid ?? 0,
+                'currency' => 'ILS',
+            ]);
+            $orderId = $newOrder->id;
+        }
+
         $task = Task::create([
             'supervisor_id' => $user->id,
             'title' => $data['title'],
@@ -91,17 +113,21 @@ class TaskController extends Controller
             'customer_name' => $data['customer_name'] ?? null,
             'customer_phone' => $data['customer_phone'] ?? null,
             'client_id' => $data['client_id'] ?? null,
-            'order_id' => $data['order_id'] ?? null,
+            'order_id' => $orderId,
             'status' => Task::STATUS_PENDING,
         ]);
 
         // If this task is attached to an existing order, propagate the client_id onto the order so
         // the client section aggregates correctly when payments are added later. Overwrite any
         // prior value too, otherwise re-linking the task to a different client never reaches
-        // the order and the new client keeps showing zero totals.
-        if (! empty($data['client_id']) && ! empty($data['order_id'])) {
-            Order::where('id', $data['order_id'])
-                ->update(['client_id' => $data['client_id']]);
+        // the order and the new client keeps showing zero totals. Also let supervisors top-up
+        // the totals on an already-linked order through the same form.
+        if (!empty($orderId)) {
+            $updates = [];
+            if (!empty($data['client_id'])) $updates['client_id'] = $data['client_id'];
+            if ($totalAmount !== null) $updates['total_amount'] = $totalAmount;
+            if ($amountPaid !== null) $updates['amount_paid'] = $amountPaid;
+            if (!empty($updates)) Order::where('id', $orderId)->update($updates);
         }
 
         $task->assignees()->sync($data['assignee_ids']);
@@ -323,10 +349,16 @@ class TaskController extends Controller
         $orderArray = null;
         if ($order) {
             $order->loadMissing(['items.profile.category', 'items.color']);
+            $total = $order->total_amount !== null ? (float) $order->total_amount : null;
+            $paid = $order->amount_paid !== null ? (float) $order->amount_paid : 0.0;
             $orderArray = [
                 'id' => (string) $order->id,
                 'status' => $order->status,
                 'customerReference' => $order->customer_reference,
+                'totalAmount' => $total,
+                'amountPaid' => $paid,
+                'balanceDue' => $total !== null ? round(max(0, $total - $paid), 2) : null,
+                'paymentStatus' => Order::derivePaymentStatus($total, $paid),
                 'items' => $order->items->map(fn ($i) => [
                     'profileCode' => $i->profile?->profile_id,
                     'profileName' => $i->profile?->name,

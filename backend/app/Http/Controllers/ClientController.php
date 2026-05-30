@@ -121,6 +121,11 @@ class ClientController extends Controller
             ->flatMap(fn ($o) => $o->items)
             ->sum(fn ($i) => (int) ($i->quantity ?? 0));
 
+        $tasks = $client->tasks()
+            ->with(['assignees:id,name', 'order:id,status,total_amount,amount_paid'])
+            ->orderByDesc('updated_at')
+            ->get();
+
         return response()->json([
             'client' => $this->clientToArray($client),
             'analytics' => [
@@ -166,6 +171,26 @@ class ClientController extends Controller
                         'notes' => $i->notes,
                     ])->values(),
                     'payments' => $o->payments->map(fn ($p) => $p->toApiArray())->values(),
+                ];
+            })->values(),
+            'tasks' => $tasks->map(function ($t) {
+                $o = $t->order;
+                $total = $o && $o->total_amount !== null ? (float) $o->total_amount : null;
+                $paid = $o ? (float) ($o->amount_paid ?? 0) : 0.0;
+                return [
+                    'id' => (string) $t->id,
+                    'title' => $t->title,
+                    'status' => $t->status,
+                    'dueDate' => $t->due_date?->format('Y-m-d'),
+                    'orderId' => $t->order_id ? (string) $t->order_id : null,
+                    'orderStatus' => $o?->status,
+                    'totalAmount' => $total,
+                    'amountPaid' => $paid,
+                    'balanceDue' => $total !== null ? round(max(0, $total - $paid), 2) : null,
+                    'paymentStatus' => Order::derivePaymentStatus($total, $paid),
+                    'assignees' => $t->assignees->map(fn ($a) => ['id' => (string) $a->id, 'name' => $a->name])->values(),
+                    'createdAt' => $t->created_at->toISOString(),
+                    'updatedAt' => $t->updated_at->toISOString(),
                 ];
             })->values(),
         ]);

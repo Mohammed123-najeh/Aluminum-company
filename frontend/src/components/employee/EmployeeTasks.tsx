@@ -4,6 +4,7 @@ import { useOrders } from '../../hooks/useOrders';
 import { useStorehouse } from '../../hooks/useStorehouse';
 import type { ApiTask, ApiUser, TaskStatus } from '../../services/api';
 import { taskDueBucket } from '../../utils/taskDates';
+import { stripCustomOrderFence } from '../../utils/taskDescription';
 import { CreateOrderModal } from './CreateOrderModal';
 import { EmployeeTaskDetailPanel } from './EmployeeTaskDetailPanel';
 import { SalesTaskFulfillmentModal } from './SalesTaskFulfillmentModal';
@@ -198,9 +199,12 @@ export const EmployeeTasks: React.FC<Props> = ({
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <h3 className="font-semibold text-slate-900 dark:text-slate-100">{task.title}</h3>
-                    {task.description && (
-                      <p className="mt-1 line-clamp-2 text-sm text-slate-600 dark:text-slate-400">{task.description}</p>
-                    )}
+                    {(() => {
+                      const desc = stripCustomOrderFence(task.description);
+                      return desc ? (
+                        <p className="mt-1 line-clamp-2 text-sm text-slate-600 dark:text-slate-400">{desc}</p>
+                      ) : null;
+                    })()}
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${

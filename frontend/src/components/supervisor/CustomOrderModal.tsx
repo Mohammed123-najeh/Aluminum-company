@@ -34,6 +34,8 @@ type SavePayload = {
   customer_name?: string | null;
   customer_phone?: string | null;
   client_id?: string | null;
+  total_amount?: number | null;
+  amount_paid?: number | null;
 };
 
 type Props = {
@@ -106,6 +108,8 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
   const [clientId, setClientId] = useState<string | null>(null);
   const [dueDate, setDueDate] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [totalAmountStr, setTotalAmountStr] = useState('');
+  const [amountPaidStr, setAmountPaidStr] = useState('');
 
   const [cards, setCards] = useState<CustomOrderCard[]>([]);
   const [expandedCardIds, setExpandedCardIds] = useState<Set<string>>(new Set());
@@ -310,6 +314,9 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
         accessoryLabel: (k) => t(accessoryKey(k)),
       });
 
+      const parsedTotal = totalAmountStr.trim() ? Number(totalAmountStr) : null;
+      const parsedPaid = amountPaidStr.trim() ? Number(amountPaidStr) : null;
+
       const saved = await onSave({
         assignee_ids: assigneeIds,
         title: finalTitle,
@@ -319,6 +326,8 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
         customer_name: customerName.trim() || null,
         customer_phone: customerPhone.trim() || null,
         client_id: clientId,
+        total_amount: parsedTotal !== null && Number.isFinite(parsedTotal) ? parsedTotal : null,
+        amount_paid: parsedPaid !== null && Number.isFinite(parsedPaid) ? parsedPaid : null,
       });
       if (saved) {
         // Upload all per-card attachments — partial failures only warn, the task
@@ -420,6 +429,60 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
                 <input type="text" value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} className={inputCls} placeholder={t('customOrderDeliveryAddressPlaceholder')} />
               </Field>
             </div>
+          </Section>
+
+          {/* Payment */}
+          <Section title={t('customOrderSectionPayment')}>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <Field label={t('customOrderPaymentTotal')}>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  value={totalAmountStr}
+                  onChange={(e) => setTotalAmountStr(e.target.value)}
+                  className={inputCls}
+                  placeholder="0.00"
+                  dir="ltr"
+                />
+              </Field>
+              <Field label={t('customOrderPaymentPaid')}>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  value={amountPaidStr}
+                  onChange={(e) => setAmountPaidStr(e.target.value)}
+                  className={inputCls}
+                  placeholder="0.00"
+                  dir="ltr"
+                />
+              </Field>
+              <Field label={t('customOrderPaymentRemaining')}>
+                {(() => {
+                  const total = totalAmountStr.trim() ? Number(totalAmountStr) : null;
+                  const paid = amountPaidStr.trim() ? Number(amountPaidStr) : 0;
+                  const remaining = total !== null && Number.isFinite(total) && Number.isFinite(paid)
+                    ? Math.max(0, total - paid)
+                    : null;
+                  const over = total !== null && Number.isFinite(total) && Number.isFinite(paid) && paid > total + 0.009;
+                  return (
+                    <input
+                      readOnly
+                      value={remaining !== null ? remaining.toFixed(2) : ''}
+                      placeholder="0.00"
+                      className={`${inputCls} cursor-default ${over ? 'text-rose-600 dark:text-rose-300' : 'text-emerald-700 dark:text-emerald-300'}`}
+                      dir="ltr"
+                    />
+                  );
+                })()}
+              </Field>
+            </div>
+            <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+              {t('customOrderPaymentHint')}
+            </p>
           </Section>
 
           {/* Product cards */}
