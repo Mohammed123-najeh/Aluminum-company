@@ -51,7 +51,7 @@ export const EmployeeRequestsPanel: React.FC = () => {
     void load();
   }, [load]);
 
-  const currentSal = parseNum(currentUser?.baseSalary);
+  const currentSal = parseNum(currentUser?.hourlyRate);
   const leaveBal = parseNum(currentUser?.annualLeaveBalance);
 
   const submitLeave = async (e: React.FormEvent) => {

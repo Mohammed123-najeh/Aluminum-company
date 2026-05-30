@@ -48,7 +48,7 @@ class SalaryIncreaseRequestController extends Controller
 
         $row = SalaryIncreaseRequest::create([
             'user_id'                 => $user->id,
-            'current_salary_snapshot' => $user->base_salary,
+            'current_salary_snapshot' => $user->hourly_rate,
             'requested_monthly_salary'=> $data['requested_monthly_salary'],
             'reason'                  => $data['reason'] ?? null,
             'status'                  => 'pending',
@@ -92,7 +92,7 @@ class SalaryIncreaseRequestController extends Controller
                     ? (float) $data['approved_monthly_salary']
                     : (float) $salaryIncreaseRequest->requested_monthly_salary;
                 $salaryIncreaseRequest->approved_monthly_salary = $approved;
-                $employee->base_salary = round($approved, 2);
+                $employee->hourly_rate = round($approved, 2);
                 $employee->save();
             }
 

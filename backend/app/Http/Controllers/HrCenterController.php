@@ -48,16 +48,29 @@ class HrCenterController extends Controller
         $minutesToday = (int) AttendanceLog::whereDate('clock_in_at', $today)->sum('minutes_worked');
         $workHoursToday = round($minutesToday / 60, 1);
 
-        // Monthly payroll = sum of active base salaries + allowances; daily ≈ monthly / 22 working days.
-        $activeStaff = User::where('role', '!=', 'admin')->where('status', 'active')->get(['base_salary', 'allowances']);
+        // Payroll totals = sum(hours_worked × hourly_rate) + allowances.
+        // "Today" = sum of today's logged hours × rate. "Month" = same across the current month.
+        $monthStart = Carbon::now()->startOfMonth();
+        $monthEnd = Carbon::now()->endOfMonth();
+        $activeStaff = User::where('role', '!=', 'admin')->where('status', 'active')->get(['id', 'hourly_rate', 'allowances']);
         $monthlyPayroll = 0.0;
+        $dailyPayroll = 0.0;
         foreach ($activeStaff as $u) {
-            $monthlyPayroll += (float) ($u->base_salary ?? 0);
+            $rate = (float) ($u->hourly_rate ?? 0);
+            if ($rate > 0) {
+                $minMonth = (int) AttendanceLog::where('user_id', $u->id)
+                    ->whereBetween('clock_in_at', [$monthStart, $monthEnd])->sum('minutes_worked');
+                $minToday = (int) AttendanceLog::where('user_id', $u->id)
+                    ->whereDate('clock_in_at', $today)->sum('minutes_worked');
+                $monthlyPayroll += round(($minMonth / 60) * $rate, 2);
+                $dailyPayroll += round(($minToday / 60) * $rate, 2);
+            }
             foreach (($u->allowances ?? []) as $v) {
                 $monthlyPayroll += (float) $v;
             }
         }
-        $dailyPayroll = round($monthlyPayroll / 22, 2);
+        $monthlyPayroll = round($monthlyPayroll, 2);
+        $dailyPayroll = round($dailyPayroll, 2);
 
         // Weekly attendance line
         $weekly = [];
@@ -168,7 +181,6 @@ class HrCenterController extends Controller
             'main_job' => 'nullable|string|max:255',
             'department' => 'nullable|string|max:80',
             'employee_number' => 'nullable|string|max:30|unique:users,employee_number',
-            'base_salary' => 'nullable|numeric|min:0',
             'hourly_rate' => 'nullable|numeric|min:0',
             'allowances' => 'nullable|array',
             'national_id' => 'nullable|string|max:40',
@@ -203,7 +215,6 @@ class HrCenterController extends Controller
             'main_job' => 'nullable|string|max:255',
             'department' => 'nullable|string|max:80',
             'employee_number' => "nullable|string|max:30|unique:users,employee_number,$id",
-            'base_salary' => 'nullable|numeric|min:0',
             'hourly_rate' => 'nullable|numeric|min:0',
             'allowances' => 'nullable|array',
             'national_id' => 'nullable|string|max:40',
@@ -437,40 +448,36 @@ class HrCenterController extends Controller
 
             $monthStart = Carbon::create($data['year'], $data['month'], 1)->startOfMonth();
             $monthEnd = $monthStart->copy()->endOfMonth();
-            $workingDays = 22; // simplified
 
             foreach ($users as $u) {
-                $base = (float) ($u->base_salary ?? 0);
+                $rate = (float) ($u->hourly_rate ?? 0);
                 $allowances = $u->allowances ?? [];
                 $allowanceTotal = 0;
                 foreach ($allowances as $v) $allowanceTotal += (float) $v;
-                $gross = $base + $allowanceTotal;
 
-                // Deductions: absences + late minutes
-                $absentDays = AttendanceLog::where('user_id', $u->id)
+                // Earned = sum of minutes_worked across the month × hourly rate.
+                $minutesWorked = (int) AttendanceLog::where('user_id', $u->id)
                     ->whereBetween('clock_in_at', [$monthStart, $monthEnd])
-                    ->where('status', 'absent')->where('justified', false)->count();
+                    ->sum('minutes_worked');
+                $earned = round(($minutesWorked / 60) * $rate, 2);
+                $gross = $earned + $allowanceTotal;
+
+                // Deductions: late minutes (we don't double-deduct absences — already not earned).
                 $lateMinutes = (int) AttendanceLog::where('user_id', $u->id)
                     ->whereBetween('clock_in_at', [$monthStart, $monthEnd])
                     ->where('status', 'late')->where('justified', false)->sum('late_minutes');
-
-                $dayWage = $workingDays > 0 ? $base / $workingDays : 0;
-                $absenceDed = round($dayWage * $absentDays, 2);
-                $lateDed = round(($lateMinutes / 60) * ($u->hourly_rate ?? ($dayWage / 8)), 2);
-
-                // Active advance repayments
+                $lateDed = round(($lateMinutes / 60) * $rate, 2);
                 $advanceDed = 0;
 
-                $totalDeductions = $absenceDed + $lateDed + $advanceDed;
+                $totalDeductions = $lateDed + $advanceDed;
                 $net = max(0, $gross - $totalDeductions);
 
                 Payslip::create([
                     'run_id' => $run->id,
                     'user_id' => $u->id,
-                    'base_salary' => $base,
+                    'earned_amount' => $earned,
                     'allowances' => $allowances,
                     'deductions' => [
-                        'absence' => $absenceDed,
                         'late' => $lateDed,
                         'advance' => $advanceDed,
                     ],
@@ -525,7 +532,7 @@ class HrCenterController extends Controller
             $p->total_deductions = array_sum(array_map('floatval', $data['deductions']));
         }
         $allowanceTotal = array_sum(array_map('floatval', $p->allowances ?? []));
-        $p->gross = (float) $p->base_salary + $allowanceTotal;
+        $p->gross = (float) $p->earned_amount + $allowanceTotal;
         $p->net = max(0, $p->gross - (float) $p->total_deductions);
         $p->save();
         return response()->json($p->fresh()->toApiArray());
@@ -606,18 +613,18 @@ class HrCenterController extends Controller
             'reason' => 'nullable|string',
         ]);
         $u = User::findOrFail($data['user_id']);
-        $oldSalary = (float) ($u->base_salary ?? 0);
-        $amount = $data['mode'] === 'amount' ? (float) $data['value'] : round($oldSalary * (float) $data['value'] / 100, 2);
-        $newSalary = $oldSalary + $amount;
-        $percentage = $data['mode'] === 'percentage' ? (float) $data['value'] : ($oldSalary > 0 ? round($amount / $oldSalary * 100, 3) : null);
+        $oldRate = (float) ($u->hourly_rate ?? 0);
+        $amount = $data['mode'] === 'amount' ? (float) $data['value'] : round($oldRate * (float) $data['value'] / 100, 2);
+        $newRate = $oldRate + $amount;
+        $percentage = $data['mode'] === 'percentage' ? (float) $data['value'] : ($oldRate > 0 ? round($amount / $oldRate * 100, 3) : null);
 
         $apply = Carbon::parse($data['effective_date'])->lte(Carbon::today());
 
         $inc = SalaryIncrement::create([
             'user_id' => $data['user_id'],
             'type' => $data['type'],
-            'old_salary' => $oldSalary,
-            'new_salary' => $newSalary,
+            'old_salary' => $oldRate,
+            'new_salary' => $newRate,
             'amount' => $amount,
             'percentage' => $percentage,
             'effective_date' => $data['effective_date'],
@@ -628,7 +635,7 @@ class HrCenterController extends Controller
         ]);
 
         if ($apply) {
-            $u->base_salary = $newSalary;
+            $u->hourly_rate = $newRate;
             $u->save();
         }
 

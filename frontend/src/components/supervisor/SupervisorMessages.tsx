@@ -75,6 +75,15 @@ export const SupervisorMessages: React.FC<Props> = ({
   };
   const unreadFor = (peerId: string) => summaryFor(peerId)?.unreadCount ?? 0;
 
+  const roleLabel = (u: User) => {
+    if (u.role === 'admin') return t('admin');
+    if (u.role === 'supervisor') return t('supervisor');
+    if (u.employeeType === 'hr') return t('hr');
+    if (u.employeeType === 'accountant') return t('accountant');
+    if (u.employeeType === 'sales') return t('sales');
+    return t('employeeRole');
+  };
+
   useEffect(() => {
     setReplyTaskId('');
     setBody('');
@@ -115,10 +124,11 @@ export const SupervisorMessages: React.FC<Props> = ({
               }`}
             >
               <div className="flex items-center justify-between gap-2">
-                <p className="truncate font-medium text-slate-900 dark:text-slate-100">Primary Admin</p>
+                <p className="truncate font-medium text-slate-900 dark:text-slate-100">{primaryAdmin.name}</p>
                 {unreadFor(primaryAdmin.id) > 0 && <span className="rounded-full bg-indigo-600 px-1.5 py-px text-[10px] font-bold text-white">{unreadFor(primaryAdmin.id)}</span>}
               </div>
-              <p className="truncate text-xs text-slate-500 dark:text-slate-400">{previewFor(primaryAdmin.id) ?? primaryAdmin.name}</p>
+              <p className="truncate text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">{roleLabel(primaryAdmin)}</p>
+              {previewFor(primaryAdmin.id) && <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{previewFor(primaryAdmin.id)}</p>}
             </button>
           )}
           <button
@@ -159,6 +169,7 @@ export const SupervisorMessages: React.FC<Props> = ({
                       <p className="truncate font-medium text-slate-900 dark:text-slate-100">{e.name}</p>
                       {unread > 0 && <span className="rounded-full bg-indigo-600 px-1.5 py-px text-[10px] font-bold text-white">{unread}</span>}
                     </div>
+                    <p className="truncate text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">{roleLabel(e)}</p>
                     {prev && <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{prev}</p>}
                   </button>
                 );

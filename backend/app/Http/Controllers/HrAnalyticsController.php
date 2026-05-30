@@ -68,8 +68,8 @@ class HrAnalyticsController extends Controller
 
         $avgSalary = User::query()
             ->whereIn('role', ['employee', 'supervisor'])
-            ->whereNotNull('base_salary')
-            ->avg('base_salary');
+            ->whereNotNull('hourly_rate')
+            ->avg('hourly_rate');
 
         $recentLeave = LeaveRequest::query()
             ->with('user:id,name')
@@ -182,7 +182,7 @@ class HrAnalyticsController extends Controller
                 'employeeType'           => $u->employee_type,
                 'mainJob'                => $u->main_job,
                 'status'                 => $u->status,
-                'baseSalary'             => $u->base_salary !== null ? (string) $u->base_salary : null,
+                'hourlyRate'             => $u->hourly_rate !== null ? (string) $u->hourly_rate : null,
                 'annualLeaveBalance'     => $u->annual_leave_balance !== null ? (string) $u->annual_leave_balance : null,
                 'supervisorId'           => $u->supervisor_id ? (string) $u->supervisor_id : null,
                 'supervisorName'         => $u->supervisor?->name,

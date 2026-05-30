@@ -122,7 +122,7 @@ const WorkTab: React.FC<{ u: ApiEmployee; t: (k: any) => string; increments: Api
       <KV k={t('hr.employees.col.hireDate')} v={u.hireDate} />
       <KV k={t('hr.profile.contractType')} v={u.contractType} />
       <KV k={t('hr.profile.contractDuration')} v={u.contractDuration} />
-      <KV k={t('hr.employees.col.baseSalary')} v={u.baseSalary ? formatIls(Number(u.baseSalary)) : '—'} />
+      <KV k={t('hr.employees.col.baseSalary')} v={u.hourlyRate ? `${formatIls(Number(u.hourlyRate))} / h` : '—'} />
       <KV k={t('hr.profile.bankAccount')} v={u.bankAccount} />
     </div>
     {u.allowances && Object.keys(u.allowances).length > 0 && (

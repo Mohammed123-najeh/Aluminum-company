@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
-import type { ApiMessage, ApiMessageThreadSummary, ApiMessageInboxSummary, ApiTask } from '../../services/api';
+import { messagesApi, type ApiMessage, type ApiMessageContact, type ApiMessageThreadSummary, type ApiMessageInboxSummary, type ApiTask } from '../../services/api';
 import type { MessageThreadSummary } from '../../hooks/useMessages';
 
 function isInboxSummary(s: MessageThreadSummary): s is ApiMessageInboxSummary {
@@ -32,10 +32,44 @@ export const EmployeeMessages: React.FC<Props> = ({
   summariesLoading,
   sendMessage,
 }) => {
-  const { t } = useApp();
+  const { t, token } = useApp();
   const [body, setBody] = useState('');
   const [replyTaskId, setReplyTaskId] = useState<string>('');
   const [sending, setSending] = useState(false);
+  const [contacts, setContacts] = useState<ApiMessageContact[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!token) return;
+    setContactsLoading(true);
+    messagesApi
+      .contacts(token)
+      .then(setContacts)
+      .catch(() => setContacts([]))
+      .finally(() => setContactsLoading(false));
+  }, [token]);
+
+  const roleLabel = (c: ApiMessageContact): string => {
+    if (c.role === 'admin') return t('admin');
+    if (c.role === 'supervisor') return t('supervisor');
+    if (c.employeeType === 'hr') return t('hr');
+    if (c.employeeType === 'accountant') return t('accountant');
+    if (c.employeeType === 'sales') return t('sales');
+    return t('employeeRole');
+  };
+
+  const summaryFor = (contactId: string): MessageThreadSummary | undefined =>
+    threadSummaries.find((x) => (isInboxSummary(x) ? x.senderId : x.receiverId) === contactId);
+
+  const orderedContacts = useMemo(() => {
+    const order: Record<ApiMessageContact['relation'], number> = {
+      supervisor: 0, teammate: 1, hr: 2, team: 3, admin: 4, staff: 5,
+    };
+    return [...contacts].sort((a, b) => {
+      const r = order[a.relation] - order[b.relation];
+      return r !== 0 ? r : a.name.localeCompare(b.name);
+    });
+  }, [contacts]);
 
   const myTasks = useMemo(
     () =>
@@ -61,50 +95,51 @@ export const EmployeeMessages: React.FC<Props> = ({
     }
   };
 
-  const selectedName =
-    selectedSenderId && threadSummaries.length > 0
-      ? (() => {
-          const s = threadSummaries.find((x) => (isInboxSummary(x) ? x.senderId : x.receiverId) === selectedSenderId);
-          return s ? (isInboxSummary(s!) ? s!.senderName : (s as ApiMessageThreadSummary).receiverName) : selectedSenderId;
-        })()
-      : null;
+  const selectedName = (() => {
+    if (!selectedSenderId) return null;
+    const c = contacts.find((x) => x.id === selectedSenderId);
+    if (c) return c.name;
+    const s = threadSummaries.find((x) => (isInboxSummary(x) ? x.senderId : x.receiverId) === selectedSenderId);
+    if (s) return isInboxSummary(s) ? s.senderName : (s as ApiMessageThreadSummary).receiverName;
+    return selectedSenderId;
+  })();
 
   return (
     <div className="flex h-[calc(100vh-8rem)] gap-4">
       <div className="flex w-64 shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
         <div className="border-b border-slate-100 px-3 py-2 dark:border-slate-700">
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('inbox')}</p>
+          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('messageContacts')}</p>
         </div>
         <div className="flex-1 overflow-y-auto p-2">
-          {summariesLoading ? (
+          {(contactsLoading || summariesLoading) ? (
             <div className="flex justify-center py-4">
               <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-indigo-500" />
             </div>
-          ) : threadSummaries.length === 0 ? (
+          ) : orderedContacts.length === 0 ? (
             <p className="py-4 text-center text-xs text-slate-400 dark:text-slate-500">{t('noMessagesYet')}</p>
           ) : (
             <div className="space-y-1">
-              {threadSummaries.map((s) => {
-                const id = isInboxSummary(s) ? s.senderId : s.receiverId;
-                const name = isInboxSummary(s) ? s.senderName : (s as ApiMessageThreadSummary).receiverName;
-                const unread = s.unreadCount ?? 0;
+              {orderedContacts.map((c) => {
+                const s = summaryFor(c.id);
+                const unread = s?.unreadCount ?? 0;
+                const preview = s?.lastPreview ?? null;
                 return (
                   <button
-                    key={id}
+                    key={c.id}
                     type="button"
-                    onClick={() => onSelectSender(id)}
+                    onClick={() => onSelectSender(c.id)}
                     className={`w-full rounded-lg px-3 py-2.5 text-left text-sm transition ${
-                      selectedSenderId === id
+                      selectedSenderId === c.id
                         ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-200'
                         : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'
                     }`}
                   >
-                    <p className="text-[10px] font-medium text-slate-400 dark:text-slate-500">{t('from')}</p>
                     <div className="flex items-center justify-between gap-2">
-                      <p className="truncate font-medium text-slate-900 dark:text-slate-100">{name ?? id}</p>
+                      <p className="truncate font-medium text-slate-900 dark:text-slate-100">{c.name}</p>
                       {unread > 0 && <span className="rounded-full bg-indigo-600 px-1.5 py-px text-[10px] font-bold text-white">{unread}</span>}
                     </div>
-                    <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{s.lastPreview}</p>
+                    <p className="truncate text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500">{roleLabel(c)}</p>
+                    {preview && <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{preview}</p>}
                   </button>
                 );
               })}

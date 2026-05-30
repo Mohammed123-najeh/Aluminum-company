@@ -1,4 +1,4 @@
-import React, { useState, useEffect, startTransition, useCallback } from 'react';
+import React, { useState, useEffect, startTransition } from 'react';
 import { useUsers } from '../hooks/useUsers';
 import { useApp } from '../contexts/AppContext';
 import { StatsCards } from '../components/admin/StatsCards';
@@ -11,16 +11,14 @@ import { AiAssistantPanel } from '../components/ai/AiAssistantPanel';
 import { AdminMessages } from '../components/admin/AdminMessages';
 import { AdminAnalytics } from '../components/admin/AdminAnalytics';
 import { AdminFinancialAnalytics } from '../components/admin/AdminFinancialAnalytics';
-import { AdminApprovalCenter } from '../components/admin/AdminApprovalCenter';
 import { AdminPayrollPanel } from '../components/admin/AdminPayrollPanel';
 import { NotificationBell } from '../components/notifications/NotificationBell';
 import { NotificationsPanel } from '../components/notifications/NotificationsPanel';
 import { useNotifications } from '../hooks/useNotifications';
 import { useMessages } from '../hooks/useMessages';
 import type { User, CreateUserInput, UpdateUserInput } from '../types/user';
-import { adminApprovalsApi } from '../services/api';
 
-type View = 'users' | 'orgchart' | 'analytics' | 'financial' | 'payroll' | 'approvals' | 'messages' | 'assistant' | 'notifications';
+type View = 'users' | 'orgchart' | 'analytics' | 'financial' | 'payroll' | 'messages' | 'assistant' | 'notifications';
 
 const NavItem: React.FC<{
   label: string;
@@ -59,7 +57,6 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
   const [showCreate, setShowCreate] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [approvalPendingTotal, setApprovalPendingTotal] = useState(0);
 
   const { users, loading: usersLoading, error: usersError, createUser, updateUser, deleteUser, toggleStatus, assignSupervisor } = useUsers();
   const [selectedMessagePeerId, setSelectedMessagePeerId] = useState<string | null>(null);
@@ -69,22 +66,6 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
-
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    adminApprovalsApi
-      .summary(token)
-      .then((s) => {
-        if (!cancelled) setApprovalPendingTotal(s.pendingSalaryRequests + s.pendingSubmissions);
-      })
-      .catch(() => {
-        if (!cancelled) setApprovalPendingTotal(0);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [token, view]);
 
   const handleCreate = async (input: CreateUserInput) => {
     await createUser(input);
@@ -128,14 +109,6 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
     goView('messages');
     setSelectedMessagePeerId(peerUserId);
   };
-
-  const refreshApprovalCounts = useCallback(() => {
-    if (!token) return;
-    adminApprovalsApi
-      .summary(token)
-      .then((s) => setApprovalPendingTotal(s.pendingSalaryRequests + s.pendingSubmissions))
-      .catch(() => {});
-  }, [token]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-100 dark:bg-slate-950">
@@ -215,22 +188,6 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
               </svg>
             }
           />
-          <NavItem
-            label={t('adminApprovalsNav')}
-            active={view === 'approvals'}
-            onClick={() => goView('approvals')}
-            badge={approvalPendingTotal > 0 ? approvalPendingTotal : undefined}
-            icon={
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"
-                />
-              </svg>
-            }
-          />
-
           <NavItem
             label={t('messages')}
             active={view === 'messages'}
@@ -336,7 +293,6 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
               {view === 'analytics' && t('adminAnalytics')}
               {view === 'financial' && t('adminFinancialDashboardTitle')}
               {view === 'payroll' && t('adminPayrollTitle')}
-              {view === 'approvals' && t('adminApprovalsTitle')}
               {view === 'messages' && t('messages')}
               {view === 'assistant' && t('aiAssistantNav')}
               {view === 'notifications' && t('notificationsTitle')}
@@ -428,17 +384,6 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
               </button>
               <button
                 type="button"
-                onClick={() => goView('approvals')}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
-                  view === 'approvals'
-                    ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100'
-                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-                }`}
-              >
-                {t('adminApprovalsNav')}
-              </button>
-              <button
-                type="button"
                 onClick={() => goView('messages')}
                 className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
                   view === 'messages'
@@ -492,7 +437,7 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
             {/* Create Account */}
             <button
               onClick={() => setShowCreate(true)}
-              className={`inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-indigo-500 to-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/25 transition hover:from-indigo-400 hover:to-blue-500 ${view === 'assistant' || view === 'notifications' || view === 'messages' || view === 'analytics' || view === 'financial' || view === 'approvals' || view === 'payroll' ? 'hidden' : ''}`}
+              className={`inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-indigo-500 to-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/25 transition hover:from-indigo-400 hover:to-blue-500 ${view === 'assistant' || view === 'notifications' || view === 'messages' || view === 'analytics' || view === 'financial' || view === 'payroll' ? 'hidden' : ''}`}
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -512,8 +457,6 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
             <AdminFinancialAnalytics />
           ) : view === 'payroll' ? (
             <AdminPayrollPanel />
-          ) : view === 'approvals' ? (
-            <AdminApprovalCenter onCountsMayHaveChanged={refreshApprovalCounts} />
           ) : usersLoading ? (
             <div className="flex items-center justify-center py-20">
               <span className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-indigo-500 dark:border-slate-700" />

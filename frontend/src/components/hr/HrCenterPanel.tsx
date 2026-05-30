@@ -28,9 +28,6 @@ export const HrCenterPanel: React.FC = () => {
 
   const actions = (
     <>
-      <button type="button" onClick={() => setSection('employees')} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
-        + {t('hr.action.addEmployee')}
-      </button>
       <button type="button" onClick={() => setSection('attendance')} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
         {t('hr.action.attendanceReport')}
       </button>

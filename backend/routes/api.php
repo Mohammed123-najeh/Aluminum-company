@@ -40,6 +40,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/my-employees', [MyEmployeesController::class, 'index']);
 
     Route::get('/messages', [MessageController::class, 'index']);
+    Route::get('/messages/contacts', [MessageController::class, 'contacts']);
     Route::post('/messages', [MessageController::class, 'store']);
 
     Route::get('/tasks', [TaskController::class, 'index']);

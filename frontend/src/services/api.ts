@@ -87,7 +87,6 @@ export type ApiUser = {
   role: 'admin' | 'supervisor' | 'employee';
   employeeType?: 'accountant' | 'sales' | 'hr' | null;
   mainJob?: string | null;
-  baseSalary?: string | null;
   hourlyRate?: string | null;
   annualLeaveBalance?: string | null;
   supervisorId?: string | null;
@@ -163,7 +162,6 @@ export type CreateUserPayload = {
   employee_type?: string | null;
   main_job?: string | null;
   supervisor_id?: string | null;
-  base_salary?: number | null;
   hourly_rate?: number | null;
   annual_leave_balance?: number | null;
 };
@@ -176,7 +174,6 @@ export type UpdateUserPayload = {
   main_job?: string | null;
   supervisor_id?: string | null;
   status?: 'active' | 'suspended';
-  base_salary?: number | null;
   hourly_rate?: number | null;
   annual_leave_balance?: number | null;
 };
@@ -250,6 +247,15 @@ export type ApiMessageInboxSummary = {
 
 export type CreateMessagePayload = { receiver_id?: string; receiver_ids?: string[]; body: string; task_id?: string | null };
 
+export type ApiMessageContact = {
+  id: string;
+  name: string;
+  role: 'admin' | 'supervisor' | 'employee';
+  employeeType: string | null;
+  mainJob: string | null;
+  relation: 'admin' | 'supervisor' | 'teammate' | 'team' | 'hr' | 'staff';
+};
+
 export const messagesApi = {
   list: (token: string, receiverId?: string) =>
     request<ApiMessage[] | ApiMessageThreadSummary[]>(
@@ -258,6 +264,8 @@ export const messagesApi = {
       undefined,
       token,
     ),
+  contacts: (token: string) =>
+    request<ApiMessageContact[]>('GET', '/messages/contacts', undefined, token),
   send: (payload: CreateMessagePayload, token: string) => {
     const body: Record<string, unknown> = {
       body: payload.body,
@@ -961,7 +969,7 @@ export type ApiHrDirectoryRow = {
   employeeType?: string | null;
   mainJob?: string | null;
   status: string;
-  baseSalary?: string | null;
+  hourlyRate?: string | null;
   annualLeaveBalance?: string | null;
   supervisorId?: string | null;
   supervisorName?: string | null;
@@ -1407,7 +1415,6 @@ export type ApiPayrollRow = {
   role: 'admin' | 'supervisor' | 'employee';
   employeeType: string | null;
   supervisorId: string | null;
-  baseSalary: number | null;
   hourlyRate: number | null;
   totalMinutes: number;
   totalHours: number;
@@ -1785,7 +1792,6 @@ export type ApiEmployee = {
   role: string;
   employeeType: string | null;
   mainJob: string | null;
-  baseSalary: string | null;
   hourlyRate: string | null;
   annualLeaveBalance: string | null;
   supervisorId: string | null;
@@ -1866,7 +1872,8 @@ export type ApiPayslip = {
   userName?: string | null;
   department?: string | null;
   mainJob?: string | null;
-  baseSalary: string;
+  hourlyRate: string | null;
+  earnedAmount: string;
   allowances: Record<string, number | string>;
   deductions: Record<string, number | string>;
   gross: string;

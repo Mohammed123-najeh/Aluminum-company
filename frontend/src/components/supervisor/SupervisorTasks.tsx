@@ -66,12 +66,8 @@ export const SupervisorTasks: React.FC<Props> = ({
   const [showAddChooser, setShowAddChooser] = useState(false);
   const [editTask, setEditTask] = useState<ApiTask | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [filterStatus, setFilterStatus] = useState<string>('');
-  const [filterAssignee, setFilterAssignee] = useState<string>('');
 
-  const filteredTasks = tasks.filter((task) => {
-    if (filterStatus && task.status !== filterStatus) return false;
-    if (filterAssignee && !task.assignees.some((a) => a.id === filterAssignee)) return false;
+  const filteredTasks = tasks.filter(() => {
     return true;
   });
 
@@ -141,44 +137,16 @@ export const SupervisorTasks: React.FC<Props> = ({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-          >
-            <option value="">{t('allStatus')}</option>
-            {(Object.keys(STATUS_LABELS) as TaskStatus[]).map((s) => (
-              <option key={s} value={s}>
-                {t(STATUS_LABELS[s] as Parameters<typeof t>[0])}
-              </option>
-            ))}
-          </select>
-          <select
-            value={filterAssignee}
-            onChange={(e) => setFilterAssignee(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-          >
-            <option value="">All assignees</option>
-            {employees.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setShowAddChooser(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-linear-to-r from-amber-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-orange-500/25 transition hover:from-amber-400 hover:to-orange-400"
-          >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            {t('addTaskChooserButton')}
-          </button>
-        </div>
+      <div className="flex justify-end">
+        <button
+          onClick={() => setShowAddChooser(true)}
+          className="inline-flex items-center gap-2 rounded-lg bg-linear-to-r from-amber-500 to-orange-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-orange-500/25 transition hover:from-amber-400 hover:to-orange-400"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          {t('addTaskChooserButton')}
+        </button>
       </div>
 
       {filteredTasks.length === 0 ? (

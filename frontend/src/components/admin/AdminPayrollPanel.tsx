@@ -47,9 +47,8 @@ export const AdminPayrollPanel: React.FC = () => {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
 
-  // Per-row editing buffer for salary / hourly rate
+  // Per-row editing buffer for hourly rate
   const [editId, setEditId] = useState<string | null>(null);
-  const [editBaseSalary, setEditBaseSalary] = useState('');
   const [editHourlyRate, setEditHourlyRate] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
@@ -87,18 +86,20 @@ export const AdminPayrollPanel: React.FC = () => {
   const totals = useMemo(() => {
     const totalHours = filtered.reduce((acc, r) => acc + r.totalHours, 0);
     const totalEarnings = filtered.reduce((acc, r) => acc + (r.computedEarnings ?? 0), 0);
-    const monthlySalaryTotal = filtered.reduce((acc, r) => acc + (r.baseSalary ?? 0), 0);
+    const avgHourlyRate = (() => {
+      const rates = filtered.map((r) => r.hourlyRate ?? 0).filter((n) => n > 0);
+      return rates.length ? rates.reduce((s, n) => s + n, 0) / rates.length : 0;
+    })();
     return {
       totalHours,
       totalEarnings,
-      monthlySalaryTotal,
+      avgHourlyRate,
       headcount: filtered.length,
     };
   }, [filtered]);
 
   const beginEdit = (row: ApiPayrollRow) => {
     setEditId(row.userId);
-    setEditBaseSalary(row.baseSalary != null ? String(row.baseSalary) : '');
     setEditHourlyRate(row.hourlyRate != null ? String(row.hourlyRate) : '');
     setSavedMsg(null);
   };
@@ -112,14 +113,7 @@ export const AdminPayrollPanel: React.FC = () => {
     setSaving(true);
     setError(null);
     try {
-      const payload: { base_salary?: number | null; hourly_rate?: number | null } = {};
-      if (editBaseSalary.trim() === '') {
-        payload.base_salary = null;
-      } else {
-        const n = Number(editBaseSalary);
-        if (!Number.isFinite(n) || n < 0) throw new Error('Invalid salary');
-        payload.base_salary = n;
-      }
+      const payload: { hourly_rate?: number | null } = {};
       if (editHourlyRate.trim() === '') {
         payload.hourly_rate = null;
       } else {
@@ -133,7 +127,6 @@ export const AdminPayrollPanel: React.FC = () => {
           r.userId === row.userId
             ? {
                 ...r,
-                baseSalary: updated.baseSalary != null ? Number(updated.baseSalary) : null,
                 hourlyRate: updated.hourlyRate != null ? Number(updated.hourlyRate) : null,
                 computedEarnings:
                   updated.hourlyRate != null ? Number(updated.hourlyRate) * r.totalHours : null,
@@ -266,8 +259,8 @@ export const AdminPayrollPanel: React.FC = () => {
           <p className="mt-1 text-2xl font-bold tabular-nums text-amber-900 dark:text-amber-100">{formatIls(totals.totalEarnings)}</p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-linear-to-br from-slate-50 to-white p-4 shadow-sm dark:border-slate-700 dark:from-slate-700/30 dark:to-slate-800/40">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">{t('payrollMonthlySalaries')}</p>
-          <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">{formatIls(totals.monthlySalaryTotal)}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">{t('payrollAvgHourlyRate')}</p>
+          <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">{formatIls(totals.avgHourlyRate)} / h</p>
         </div>
       </section>
 
@@ -282,7 +275,6 @@ export const AdminPayrollPanel: React.FC = () => {
                 <tr>
                   <th className="px-4 py-3">{t('payrollColEmployee')}</th>
                   <th className="px-4 py-3">{t('payrollColRole')}</th>
-                  <th className="px-4 py-3 text-right">{t('payrollColBaseSalary')}</th>
                   <th className="px-4 py-3 text-right">{t('payrollColHourlyRate')}</th>
                   <th className="px-4 py-3 text-right">{t('payrollColHours')}</th>
                   <th className="px-4 py-3 text-right">{t('payrollColEarned')}</th>
@@ -293,7 +285,7 @@ export const AdminPayrollPanel: React.FC = () => {
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                       {t('payrollEmpty')}
                     </td>
                   </tr>
@@ -310,22 +302,6 @@ export const AdminPayrollPanel: React.FC = () => {
                       <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${roleBadgeColor(row)}`}>
                         {roleLabel(row)}
                       </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {editId === row.userId ? (
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={editBaseSalary}
-                          onChange={(e) => setEditBaseSalary(e.target.value)}
-                          className="w-28 rounded border border-slate-200 px-2 py-1 text-right text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
-                        />
-                      ) : (
-                        <span className="font-mono tabular-nums text-slate-900 dark:text-slate-100">
-                          {row.baseSalary != null ? formatIls(row.baseSalary) : '—'}
-                        </span>
-                      )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       {editId === row.userId ? (

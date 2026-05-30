@@ -26,8 +26,16 @@ class MessageController extends Controller
                     return response()->json(['message' => 'You can only view threads with your employees or the primary admin'], 403);
                 }
             }
-            if ($user->role === 'employee' && $user->supervisor_id != $otherId) {
-                return response()->json(['message' => 'You can only view threads with your supervisor'], 403);
+            if ($user->role === 'employee') {
+                $other = User::find($otherId);
+                $allowed = $other && (
+                    (int) $other->id === (int) $user->supervisor_id
+                    || ($other->role === 'employee' && $other->employee_type === 'hr')
+                    || ($other->role === 'employee' && $other->id !== $user->id && (int) $other->supervisor_id === (int) $user->supervisor_id && $user->supervisor_id !== null)
+                );
+                if (! $allowed) {
+                    return response()->json(['message' => 'You can only message your supervisor, HR, or your teammates'], 403);
+                }
             }
             if ($user->role === 'admin') {
                 $other = User::find($otherId);
@@ -144,7 +152,12 @@ class MessageController extends Controller
                 || ($primaryAdmin && (int) $receiver->id === (int) $primaryAdmin->id);
         }
         if ($user->role === 'employee') {
-            return (int) $receiver->id === (int) $user->supervisor_id;
+            return (int) $receiver->id === (int) $user->supervisor_id
+                || ($receiver->role === 'employee' && $receiver->employee_type === 'hr')
+                || ($receiver->role === 'employee'
+                    && (int) $receiver->id !== (int) $user->id
+                    && $user->supervisor_id !== null
+                    && (int) $receiver->supervisor_id === (int) $user->supervisor_id);
         }
         if ($user->role === 'admin') {
             return $receiver->role !== 'admin';
@@ -156,6 +169,67 @@ class MessageController extends Controller
     private function primaryAdmin(): ?User
     {
         return User::query()->where('role', 'admin')->where('status', 'active')->orderBy('id')->first();
+    }
+
+    /**
+     * GET /messages/contacts
+     * Returns people the current user is allowed to message, grouped by relation
+     * (HR / supervisor / teammates / team / primary admin).
+     */
+    public function contacts(Request $request)
+    {
+        $user = $request->user();
+
+        $hr = User::query()
+            ->where('role', 'employee')
+            ->where('employee_type', 'hr')
+            ->where('status', 'active')
+            ->where('id', '!=', $user->id)
+            ->orderBy('name')->get();
+
+        $contacts = [];
+
+        if ($user->role === 'admin') {
+            $rows = User::query()->where('role', '!=', 'admin')->where('status', 'active')->orderBy('name')->get();
+            foreach ($rows as $u) $contacts[] = $this->contactRow($u, 'staff');
+        } elseif ($user->role === 'supervisor') {
+            $admin = $this->primaryAdmin();
+            if ($admin) $contacts[] = $this->contactRow($admin, 'admin');
+            foreach ($hr as $u) $contacts[] = $this->contactRow($u, 'hr');
+            $team = $user->subordinates()->where('status', 'active')->orderBy('name')->get();
+            foreach ($team as $u) $contacts[] = $this->contactRow($u, 'team');
+        } else { // employee
+            if ($user->supervisor_id) {
+                $sup = User::find($user->supervisor_id);
+                if ($sup && $sup->status === 'active') $contacts[] = $this->contactRow($sup, 'supervisor');
+                $teammates = User::query()
+                    ->where('role', 'employee')
+                    ->where('supervisor_id', $user->supervisor_id)
+                    ->where('id', '!=', $user->id)
+                    ->where('status', 'active')
+                    ->orderBy('name')->get();
+                foreach ($teammates as $u) $contacts[] = $this->contactRow($u, 'teammate');
+            }
+            foreach ($hr as $u) {
+                if (! collect($contacts)->pluck('id')->contains((string) $u->id)) {
+                    $contacts[] = $this->contactRow($u, 'hr');
+                }
+            }
+        }
+
+        return response()->json($contacts);
+    }
+
+    private function contactRow(User $u, string $relation): array
+    {
+        return [
+            'id' => (string) $u->id,
+            'name' => $u->name,
+            'role' => $u->role,
+            'employeeType' => $u->employee_type,
+            'mainJob' => $u->main_job,
+            'relation' => $relation,
+        ];
     }
 
     private function threadSummariesFor(User $user): array

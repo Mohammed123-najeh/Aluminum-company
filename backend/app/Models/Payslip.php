@@ -11,14 +11,14 @@ class Payslip extends Model
     public const STATUS_PAID = 'paid';
 
     protected $fillable = [
-        'run_id', 'user_id', 'base_salary', 'allowances', 'deductions',
+        'run_id', 'user_id', 'earned_amount', 'allowances', 'deductions',
         'gross', 'total_deductions', 'net', 'status', 'paid_at', 'notes',
     ];
 
     protected function casts(): array
     {
         return [
-            'base_salary' => 'decimal:2',
+            'earned_amount' => 'decimal:2',
             'gross' => 'decimal:2',
             'total_deductions' => 'decimal:2',
             'net' => 'decimal:2',
@@ -40,7 +40,7 @@ class Payslip extends Model
 
     public function toApiArray(): array
     {
-        $this->loadMissing('user:id,name,email,department,main_job');
+        $this->loadMissing('user:id,name,email,department,main_job,hourly_rate');
 
         return [
             'id' => (string) $this->id,
@@ -49,7 +49,8 @@ class Payslip extends Model
             'userName' => $this->user?->name,
             'department' => $this->user?->department,
             'mainJob' => $this->user?->main_job,
-            'baseSalary' => (string) $this->base_salary,
+            'hourlyRate' => $this->user?->hourly_rate !== null ? (string) $this->user->hourly_rate : null,
+            'earnedAmount' => (string) $this->earned_amount,
             'allowances' => $this->allowances ?? [],
             'deductions' => $this->deductions ?? [],
             'gross' => (string) $this->gross,

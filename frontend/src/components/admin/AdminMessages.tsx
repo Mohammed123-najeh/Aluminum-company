@@ -59,7 +59,13 @@ export const AdminMessages: React.FC<Props> = ({
     }
   };
 
-  const roleLabel = (u: User) => (u.role === 'supervisor' ? t('supervisorsLabel') : t('employeesLabel'));
+  const roleLabel = (u: User) => {
+    if (u.role === 'supervisor') return t('supervisor');
+    if (u.employeeType === 'hr') return t('hr');
+    if (u.employeeType === 'accountant') return t('accountant');
+    if (u.employeeType === 'sales') return t('sales');
+    return t('employeeRole');
+  };
 
   return (
     <div className="flex h-[calc(100vh-8rem)] gap-4">

@@ -128,7 +128,8 @@ const RunTab: React.FC = () => {
   const cols: Column<ApiPayslip>[] = [
     { key: 'name', header: t('hr.employees.col.name'), render: (r) => r.userName ?? '—' },
     { key: 'dept', header: t('hr.employees.col.department'), render: (r) => r.department ?? '—', hideOnMobile: true },
-    { key: 'base', header: t('hr.payroll.col.base'), align: 'end', render: (r) => formatIls(Number(r.baseSalary)) },
+    { key: 'rate', header: t('adminColHourlyRate'), align: 'end', render: (r) => r.hourlyRate ? `${formatIls(Number(r.hourlyRate))} / h` : '—' },
+    { key: 'earned', header: t('hr.payroll.col.base'), align: 'end', render: (r) => formatIls(Number(r.earnedAmount)) },
     { key: 'gross', header: t('hr.payroll.col.gross'), align: 'end', render: (r) => formatIls(Number(r.gross)) },
     { key: 'ded', header: t('hr.payroll.col.deductions'), align: 'end', render: (r) => formatIls(Number(r.totalDeductions)) },
     { key: 'net', header: t('hr.payroll.col.net'), align: 'end', render: (r) => <span className="font-bold">{formatIls(Number(r.net))}</span> },
@@ -316,7 +317,7 @@ const AddIncrementModal: React.FC<{ open: boolean; onClose: () => void; onCreate
   const [submitting, setSubmitting] = useState(false);
 
   const selected = employees.find((e) => e.id === userId);
-  const currentSalary = selected?.baseSalary ? Number(selected.baseSalary) : 0;
+  const currentSalary = selected?.hourlyRate ? Number(selected.hourlyRate) : 0;
   const amount = mode === 'amount' ? parseFloat(value || '0') : currentSalary * (parseFloat(value || '0') / 100);
   const newSalary = currentSalary + amount;
 

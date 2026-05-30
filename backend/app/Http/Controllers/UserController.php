@@ -26,7 +26,6 @@ class UserController extends Controller
             'employee_type'       => 'nullable|in:accountant,sales,hr',
             'main_job'            => 'nullable|string|max:255',
             'supervisor_id'       => 'nullable|exists:users,id',
-            'base_salary'         => 'nullable|numeric|min:0',
             'hourly_rate'         => 'nullable|numeric|min:0',
             'annual_leave_balance'=> 'nullable|numeric|min:0',
         ]);
@@ -39,7 +38,6 @@ class UserController extends Controller
             'employee_type'         => $data['employee_type'] ?? null,
             'main_job'              => $data['main_job'] ?? null,
             'supervisor_id'         => $data['supervisor_id'] ?? null,
-            'base_salary'           => $data['base_salary']         ?? null,
             'hourly_rate'           => $data['hourly_rate']         ?? null,
             'annual_leave_balance'  => $data['annual_leave_balance'] ?? 0,
             'status'                => 'active',
@@ -58,7 +56,7 @@ class UserController extends Controller
 
         $me = $request->user();
 
-        // Compensation (base_salary, hourly_rate, annual_leave_balance) is admin-only.
+        // Compensation (hourly_rate, annual_leave_balance) is admin-only.
         // HR keeps no direct edit access — they can still view via /hr/analytics.
         if ($me->isHrStaff()) {
             return response()->json([
@@ -83,12 +81,11 @@ class UserController extends Controller
             'main_job'              => 'nullable|string|max:255',
             'supervisor_id'         => 'nullable|exists:users,id',
             'status'                => 'sometimes|in:active,suspended',
-            'base_salary'           => 'nullable|numeric|min:0',
             'hourly_rate'           => 'nullable|numeric|min:0',
             'annual_leave_balance'  => 'nullable|numeric|min:0',
         ]);
 
-        if (array_key_exists('base_salary', $data) || array_key_exists('hourly_rate', $data) || array_key_exists('annual_leave_balance', $data)) {
+        if (array_key_exists('hourly_rate', $data) || array_key_exists('annual_leave_balance', $data)) {
             if ($me->role !== 'admin') {
                 return response()->json(['message' => 'You cannot update compensation fields'], 403);
             }

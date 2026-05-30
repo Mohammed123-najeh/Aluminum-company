@@ -42,7 +42,7 @@ export const UserModal: React.FC<Props> = ({ users, editUser, onCreate, onUpdate
   const [empType, setEmpType] = useState<EmployeeType>(editUser?.employeeType ?? 'accountant');
   const [mainJob, setMainJob] = useState(editUser?.mainJob ?? '');
   const [supId, setSupId] = useState(editUser?.supervisorId ?? '');
-  const [baseSal, setBaseSal] = useState(editUser?.baseSalary != null ? String(editUser.baseSalary) : '');
+  const [hourlyRateStr, setHourlyRateStr] = useState(editUser?.hourlyRate != null ? String(editUser.hourlyRate) : '');
   const [annualLeave, setAnnualLeave] = useState(
     editUser?.annualLeaveBalance != null ? String(editUser.annualLeaveBalance) : '',
   );
@@ -55,7 +55,7 @@ export const UserModal: React.FC<Props> = ({ users, editUser, onCreate, onUpdate
   }, [role]);
 
   useEffect(() => {
-    setBaseSal(editUser?.baseSalary != null ? String(editUser.baseSalary) : '');
+    setHourlyRateStr(editUser?.hourlyRate != null ? String(editUser.hourlyRate) : '');
     setAnnualLeave(editUser?.annualLeaveBalance != null ? String(editUser.annualLeaveBalance) : '');
   }, [editUser]);
 
@@ -77,7 +77,7 @@ export const UserModal: React.FC<Props> = ({ users, editUser, onCreate, onUpdate
     const comp =
       role === 'employee'
         ? {
-            baseSalary: baseSal.trim() === '' ? null : Number(baseSal),
+            hourlyRate: hourlyRateStr.trim() === '' ? null : Number(hourlyRateStr),
             annualLeaveBalance: annualLeave.trim() === '' ? null : Number(annualLeave),
           }
         : {};
@@ -194,14 +194,14 @@ export const UserModal: React.FC<Props> = ({ users, editUser, onCreate, onUpdate
                   {supervisors.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </Field>
-              <Field label={t('adminColBaseSalary')}>
+              <Field label={t('adminColHourlyRate')}>
                 <input
                   type="number"
                   min={0}
                   step="0.01"
-                  value={baseSal}
-                  onChange={(e) => setBaseSal(e.target.value)}
-                  placeholder="0"
+                  value={hourlyRateStr}
+                  onChange={(e) => setHourlyRateStr(e.target.value)}
+                  placeholder="20"
                   className={inputCls}
                 />
               </Field>

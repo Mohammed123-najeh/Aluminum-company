@@ -52,7 +52,7 @@ class AttendanceController extends Controller
             });
         }
 
-        $users = $userQuery->get(['id', 'name', 'role', 'employee_type', 'base_salary', 'hourly_rate', 'supervisor_id']);
+        $users = $userQuery->get(['id', 'name', 'role', 'employee_type', 'hourly_rate', 'supervisor_id']);
 
         // Pull all logs in range for these users in one query.
         $logs = AttendanceLog::query()
@@ -86,7 +86,6 @@ class AttendanceController extends Controller
                 'role' => $u->role,
                 'employeeType' => $u->employee_type,
                 'supervisorId' => $u->supervisor_id ? (string) $u->supervisor_id : null,
-                'baseSalary' => $u->base_salary !== null ? (float) $u->base_salary : null,
                 'hourlyRate' => $rate,
                 'totalMinutes' => $totalMinutes,
                 'totalHours' => $totalHours,

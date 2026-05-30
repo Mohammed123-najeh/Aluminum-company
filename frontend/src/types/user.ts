@@ -9,7 +9,7 @@ export interface User {
   role: Role;
   employeeType?: EmployeeType;
   mainJob?: string | null;
-  baseSalary?: string | null;
+  hourlyRate?: string | null;
   annualLeaveBalance?: string | null;
   supervisorId?: string | null;
   status: UserStatus;
@@ -25,7 +25,7 @@ export interface CreateUserInput {
   employeeType?: EmployeeType;
   mainJob?: string | null;
   supervisorId?: string | null;
-  baseSalary?: number | null;
+  hourlyRate?: number | null;
   annualLeaveBalance?: number | null;
 }
 
@@ -37,6 +37,6 @@ export interface UpdateUserInput {
   mainJob?: string | null;
   supervisorId?: string | null;
   status?: UserStatus;
-  baseSalary?: number | null;
+  hourlyRate?: number | null;
   annualLeaveBalance?: number | null;
 }

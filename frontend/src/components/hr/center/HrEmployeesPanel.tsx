@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../../contexts/AppContext';
 import { hrCenterApi, type ApiEmployee } from '../../../services/api';
 import { formatIls } from '../../../utils/currency';
-import { DataTable, FilterBar, FormModal, Field, inputClass, SectionHeader, StatusBadge, type Column } from '../../shared/dash';
+import { DataTable, FilterBar, inputClass, SectionHeader, StatusBadge, type Column } from '../../shared/dash';
 import { HrEmployeeProfile } from './HrEmployeeProfile';
 
 export const HrEmployeesPanel: React.FC = () => {
@@ -13,7 +13,6 @@ export const HrEmployeesPanel: React.FC = () => {
   const [err, setErr] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
-  const [open, setOpen] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -43,7 +42,7 @@ export const HrEmployeesPanel: React.FC = () => {
     { key: 'dept', header: t('hr.employees.col.department'), render: (r) => r.department ?? r.employeeType ?? '—' },
     { key: 'role', header: t('hr.employees.col.role'), render: (r) => r.mainJob ?? '—', hideOnMobile: true },
     { key: 'phone', header: t('hr.employees.col.phone'), render: (r) => r.phone ?? '—', hideOnMobile: true },
-    { key: 'salary', header: t('hr.employees.col.baseSalary'), align: 'end', render: (r) => r.baseSalary ? formatIls(Number(r.baseSalary)) : '—' },
+    { key: 'rate', header: t('hr.employees.col.baseSalary'), align: 'end', render: (r) => r.hourlyRate ? `${formatIls(Number(r.hourlyRate))} / h` : '—' },
     { key: 'status', header: t('hr.employees.col.status'), render: (r) => <StatusBadge status={r.status} label={t(`hr.employees.status.${r.status}` as any)} /> },
   ];
 
@@ -57,9 +56,6 @@ export const HrEmployeesPanel: React.FC = () => {
               <button onClick={() => setView('grid')} className={`rounded px-2 py-1 ${view === 'grid' ? 'bg-indigo-600 text-white' : ''}`}>{t('hr.employees.viewGrid')}</button>
               <button onClick={() => setView('table')} className={`rounded px-2 py-1 ${view === 'table' ? 'bg-indigo-600 text-white' : ''}`}>{t('hr.employees.viewTable')}</button>
             </div>
-            <button onClick={() => setOpen(true)} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500">
-              + {t('hr.employees.add')}
-            </button>
           </div>
         }
       />
@@ -104,81 +100,7 @@ export const HrEmployeesPanel: React.FC = () => {
       ) : (
         <DataTable rows={rows} columns={cols} rowKey={(r) => r.id} loading={loading} empty={t('fin.common.empty')} onRowClick={(r) => setActiveId(r.id)} />
       )}
-
-      <AddEmployeeModal open={open} onClose={() => setOpen(false)} onCreated={() => { setOpen(false); void load(); }} />
     </div>
   );
 };
 
-const AddEmployeeModal: React.FC<{ open: boolean; onClose: () => void; onCreated: () => void }> = ({ open, onClose, onCreated }) => {
-  const { token, t } = useApp();
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'employee' | 'supervisor'>('employee');
-  const [department, setDepartment] = useState('');
-  const [mainJob, setMainJob] = useState('');
-  const [baseSalary, setBaseSalary] = useState('');
-  const [phone, setPhone] = useState('');
-  const [hireDate, setHireDate] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!token) return;
-    setSubmitting(true);
-    try {
-      await hrCenterApi.createEmployee(token, {
-        name, email, password, role,
-        department: department || undefined,
-        main_job: mainJob || undefined,
-        base_salary: baseSalary ? parseFloat(baseSalary) : undefined,
-        phone: phone || undefined,
-        hire_date: hireDate || undefined,
-      });
-      onCreated();
-      setName(''); setEmail(''); setPassword(''); setDepartment(''); setMainJob(''); setBaseSalary(''); setPhone(''); setHireDate('');
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <FormModal title={t('hr.employees.add')} open={open} onClose={onClose} onSubmit={submit} submitting={submitting} size="lg" submitLabel={t('fin.common.save')} cancelLabel={t('fin.common.cancel')}>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label={t('hr.employees.col.name')} required>
-          <input value={name} onChange={(e) => setName(e.target.value)} required className={inputClass} />
-        </Field>
-        <Field label="Email" required>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className={inputClass} />
-        </Field>
-        <Field label="Password" required>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} className={inputClass} />
-        </Field>
-        <Field label={t('hr.employees.col.role')}>
-          <select value={role} onChange={(e) => setRole(e.target.value as any)} className={inputClass}>
-            <option value="employee">Employee</option>
-            <option value="supervisor">Supervisor</option>
-          </select>
-        </Field>
-        <Field label={t('hr.employees.col.department')}>
-          <input value={department} onChange={(e) => setDepartment(e.target.value)} className={inputClass} />
-        </Field>
-        <Field label="Job title">
-          <input value={mainJob} onChange={(e) => setMainJob(e.target.value)} className={inputClass} />
-        </Field>
-        <Field label={t('hr.employees.col.baseSalary')}>
-          <input type="number" step="0.01" value={baseSalary} onChange={(e) => setBaseSalary(e.target.value)} className={inputClass} />
-        </Field>
-        <Field label={t('hr.employees.col.phone')}>
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputClass} />
-        </Field>
-        <Field label={t('hr.employees.col.hireDate')}>
-          <input type="date" value={hireDate} onChange={(e) => setHireDate(e.target.value)} className={inputClass} />
-        </Field>
-      </div>
-    </FormModal>
-  );
-};
