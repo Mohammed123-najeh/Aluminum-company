@@ -1,263 +1,236 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../../contexts/AppContext';
-import { hrCenterApi, type ApiPayrollRun, type ApiPayslip, type ApiSalaryIncrement, type ApiEmployee } from '../../../services/api';
+import { attendanceApi, hrCenterApi, type ApiPayrollRow, type ApiSalaryIncrement, type ApiEmployee } from '../../../services/api';
 import { formatIls } from '../../../utils/currency';
-import { DataTable, FormModal, Field, inputClass, KpiCard, StatusBadge, type Column } from '../../shared/dash';
+import { DataTable, FormModal, Field, inputClass, KpiCard, type Column } from '../../shared/dash';
 
-type Tab = 'run' | 'history' | 'settings';
+type Preset = 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom';
+
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function rangeForPreset(preset: Preset): { from: string; to: string } {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (preset === 'today') return { from: isoDate(today), to: isoDate(today) };
+  if (preset === 'yesterday') {
+    const y = new Date(today); y.setDate(today.getDate() - 1);
+    return { from: isoDate(y), to: isoDate(y) };
+  }
+  if (preset === 'this_week') {
+    const start = new Date(today); start.setDate(today.getDate() - today.getDay());
+    return { from: isoDate(start), to: isoDate(today) };
+  }
+  if (preset === 'this_month') {
+    const start = new Date(today); start.setDate(1);
+    return { from: isoDate(start), to: isoDate(today) };
+  }
+  return { from: isoDate(today), to: isoDate(today) };
+}
+
+function formatHours(h: number): string {
+  const whole = Math.floor(h);
+  const m = Math.round((h - whole) * 60);
+  return `${whole}h ${m.toString().padStart(2, '0')}m`;
+}
 
 export const HrPayrollPanel: React.FC = () => {
-  const { t } = useApp();
-  const [tab, setTab] = useState<Tab>('run');
+  const { t, token } = useApp();
 
-  const tabs: Array<{ key: Tab; label: string }> = [
-    { key: 'run', label: t('hr.payroll.tab.run') },
-    { key: 'history', label: t('hr.payroll.tab.history') },
-    { key: 'settings', label: t('hr.payroll.tab.settings') },
-  ];
+  const initial = rangeForPreset('this_month');
+  const [preset, setPreset] = useState<Preset>('this_month');
+  const [from, setFrom] = useState(initial.from);
+  const [to, setTo] = useState(initial.to);
+  const [search, setSearch] = useState('');
+  const [rows, setRows] = useState<ApiPayrollRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-        {tabs.map((tt) => (
-          <button key={tt.key} type="button" onClick={() => setTab(tt.key)} className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium ${tab === tt.key ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-indigo-50 dark:text-slate-300 dark:hover:bg-indigo-950/40'}`}>
-            {tt.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'run' && <RunTab />}
-      {tab === 'history' && <HistoryTab />}
-      {tab === 'settings' && <SettingsTab />}
-    </div>
-  );
-};
-
-const PayrollStepper: React.FC<{ step: 1 | 2 | 3; labels: [string, string, string] }> = ({ step, labels }) => (
-  <ol className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-    {labels.map((label, i) => {
-      const idx = (i + 1) as 1 | 2 | 3;
-      const done = step > idx;
-      const active = step === idx;
-      const circleCls = done
-        ? 'bg-emerald-500 text-white'
-        : active
-          ? 'bg-indigo-600 text-white ring-4 ring-indigo-200 dark:ring-indigo-900/60'
-          : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500';
-      const labelCls = done || active ? 'text-slate-900 dark:text-slate-100' : 'text-slate-400 dark:text-slate-500';
-      const connectorCls = done ? 'bg-emerald-400' : 'bg-slate-200 dark:bg-slate-700';
-      return (
-        <React.Fragment key={idx}>
-          <li className="flex items-center gap-2">
-            <span className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition ${circleCls}`}>
-              {done ? (
-                <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                  <path
-                    fillRule="evenodd"
-                    d="M16.7 5.3a1 1 0 0 1 0 1.4l-7 7a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4L9 11.6l6.3-6.3a1 1 0 0 1 1.4 0z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              ) : (
-                idx
-              )}
-            </span>
-            <span className={`text-sm font-semibold ${labelCls}`}>{label}</span>
-          </li>
-          {i < labels.length - 1 && <li className={`h-0.5 flex-1 rounded-full ${connectorCls}`} />}
-        </React.Fragment>
-      );
-    })}
-  </ol>
-);
-
-const RunTab: React.FC = () => {
-  const { token, t } = useApp();
-  const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth() + 1);
-  const [run, setRun] = useState<ApiPayrollRun | null>(null);
-  const [payslips, setPayslips] = useState<ApiPayslip[]>([]);
-  const [computing, setComputing] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  const compute = async () => {
-    if (!token) return;
-    setComputing(true);
-    try {
-      const r = await hrCenterApi.computePayroll(token, { year, month });
-      setRun(r.run); setPayslips(r.payslips);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed');
-    } finally { setComputing(false); }
+  const applyPreset = (p: Preset) => {
+    setPreset(p);
+    if (p !== 'custom') {
+      const r = rangeForPreset(p);
+      setFrom(r.from);
+      setTo(r.to);
+    }
   };
-
-  const approve = async () => {
-    if (!token || !run) return;
-    setBusy(true);
-    try {
-      const updated = await hrCenterApi.approvePayrollRun(token, run.id);
-      setRun(updated);
-    } catch (e) { alert(e instanceof Error ? e.message : 'Failed'); }
-    finally { setBusy(false); }
-  };
-
-  const payOne = async (id: string) => {
-    if (!token) return;
-    try {
-      const p = await hrCenterApi.payPayslip(token, id);
-      setPayslips((prev) => prev.map((x) => x.id === id ? p : x));
-    } catch (e) { alert(e instanceof Error ? e.message : 'Failed'); }
-  };
-
-  const payAll = async () => {
-    if (!token || !run) return;
-    if (!confirm(t('hr.payroll.payAll') + '?')) return;
-    setBusy(true);
-    try {
-      for (const p of payslips.filter((x) => x.status !== 'paid')) {
-        await hrCenterApi.payPayslip(token, p.id);
-      }
-      // Reload
-      const r = await hrCenterApi.showPayrollRun(token, run.id);
-      setRun(r.run); setPayslips(r.payslips);
-    } catch (e) { alert(e instanceof Error ? e.message : 'Failed'); }
-    finally { setBusy(false); }
-  };
-
-  const cols: Column<ApiPayslip>[] = [
-    { key: 'name', header: t('hr.employees.col.name'), render: (r) => r.userName ?? '—' },
-    { key: 'dept', header: t('hr.employees.col.department'), render: (r) => r.department ?? '—', hideOnMobile: true },
-    { key: 'rate', header: t('adminColHourlyRate'), align: 'end', render: (r) => r.hourlyRate ? `${formatIls(Number(r.hourlyRate))} / h` : '—' },
-    { key: 'earned', header: t('hr.payroll.col.base'), align: 'end', render: (r) => formatIls(Number(r.earnedAmount)) },
-    { key: 'gross', header: t('hr.payroll.col.gross'), align: 'end', render: (r) => formatIls(Number(r.gross)) },
-    { key: 'ded', header: t('hr.payroll.col.deductions'), align: 'end', render: (r) => formatIls(Number(r.totalDeductions)) },
-    { key: 'net', header: t('hr.payroll.col.net'), align: 'end', render: (r) => <span className="font-bold">{formatIls(Number(r.net))}</span> },
-    { key: 'status', header: t('fin.revenue.col.status'), render: (r) => <StatusBadge status={r.status} label={t(`hr.payroll.status.${r.status}` as any)} /> },
-    { key: 'actions', header: t('fin.common.actions'), render: (r) => (
-      run?.status === 'approved' && r.status !== 'paid' ? (
-        <button onClick={() => void payOne(r.id)} className="rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-emerald-500">Pay</button>
-      ) : null
-    ) },
-  ];
-
-  const currentStep: 1 | 2 | 3 = !run ? 1 : run.status === 'draft' ? 2 : 3;
-
-  return (
-    <div className="space-y-4">
-      <PayrollStepper step={currentStep} labels={[t('hr.payroll.run.step1'), t('hr.payroll.run.step2'), t('hr.payroll.run.step3')]} />
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-        <h3 className="mb-3 text-sm font-semibold">{t('hr.payroll.run.step1')}</h3>
-        <div className="flex flex-wrap items-end gap-2">
-          <Field label="Year">
-            <select value={year} onChange={(e) => setYear(parseInt(e.target.value))} className={inputClass + ' w-24'}>
-              {Array.from({ length: 5 }, (_, i) => today.getFullYear() - i).map((y) => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </Field>
-          <Field label="Month">
-            <select value={month} onChange={(e) => setMonth(parseInt(e.target.value))} className={inputClass + ' w-24'}>
-              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </Field>
-          <button onClick={() => void compute()} disabled={computing} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">
-            {t('hr.payroll.compute')}
-          </button>
-        </div>
-      </section>
-
-      {run && (
-        <>
-          <div className="grid gap-3 sm:grid-cols-4">
-            <KpiCard label={t('hr.payroll.col.gross')} value={formatIls(Number(run.totalGross))} tone="accent" />
-            <KpiCard label={t('hr.payroll.col.deductions')} value={formatIls(Number(run.totalDeductions))} tone="warning" />
-            <KpiCard label={t('hr.payroll.col.net')} value={formatIls(Number(run.totalNet))} tone="positive" />
-            <KpiCard label={t('hr.dashboard.kpi.total')} value={run.employeeCount} />
-          </div>
-
-          <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold">{t('hr.payroll.run.step2')}</h3>
-              <div className="flex items-center gap-2">
-                <StatusBadge status={run.status} label={t(`hr.payroll.status.${run.status}` as any)} />
-                {run.status === 'draft' && (
-                  <button onClick={() => void approve()} disabled={busy} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50">
-                    {t('hr.payroll.approve')}
-                  </button>
-                )}
-                {run.status === 'approved' && (
-                  <button onClick={() => void payAll()} disabled={busy} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">
-                    {t('hr.payroll.payAll')}
-                  </button>
-                )}
-              </div>
-            </div>
-            <DataTable rows={payslips} columns={cols} rowKey={(r) => r.id} empty={t('fin.common.empty')} dense />
-          </section>
-        </>
-      )}
-    </div>
-  );
-};
-
-const HistoryTab: React.FC = () => {
-  const { token, t } = useApp();
-  const [runs, setRuns] = useState<ApiPayrollRun[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [detailRun, setDetailRun] = useState<ApiPayrollRun | null>(null);
-  const [detailSlips, setDetailSlips] = useState<ApiPayslip[]>([]);
 
   const load = useCallback(async () => {
     if (!token) return;
-    setLoading(true);
-    try { setRuns(await hrCenterApi.listPayrollRuns(token)); }
-    finally { setLoading(false); }
-  }, [token]);
+    setLoading(true); setErr(null);
+    try {
+      const s = await attendanceApi.summary(token, { from, to });
+      setRows(s.rows.filter((r) => r.role !== 'admin'));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to load salaries');
+    } finally {
+      setLoading(false);
+    }
+  }, [token, from, to]);
 
   useEffect(() => { void load(); }, [load]);
 
-  const openRun = async (run: ApiPayrollRun) => {
-    if (!token) return;
-    const r = await hrCenterApi.showPayrollRun(token, run.id);
-    setDetailRun(r.run); setDetailSlips(r.payslips);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) => {
+      const hay = `${r.userName} ${r.employeeType ?? ''} ${r.role}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [rows, search]);
+
+  const totals = useMemo(() => {
+    const totalHours = filtered.reduce((s, r) => s + r.totalHours, 0);
+    const totalEarnings = filtered.reduce((s, r) => s + (r.computedEarnings ?? 0), 0);
+    const headcount = filtered.length;
+    const ratedCount = filtered.filter((r) => r.hourlyRate != null && r.hourlyRate > 0).length;
+    const avgRate = (() => {
+      const rates = filtered.map((r) => r.hourlyRate ?? 0).filter((x) => x > 0);
+      return rates.length ? rates.reduce((s, x) => s + x, 0) / rates.length : 0;
+    })();
+    return { totalHours, totalEarnings, headcount, ratedCount, avgRate };
+  }, [filtered]);
+
+  const positionLabel = (r: ApiPayrollRow): string => {
+    if (r.role === 'supervisor') return t('supervisor');
+    if (r.employeeType === 'hr') return t('hr');
+    if (r.employeeType === 'accountant') return t('accountant');
+    if (r.employeeType === 'sales') return t('sales');
+    return t('employeeRole');
   };
 
-  const cols: Column<ApiPayrollRun>[] = [
-    { key: 'period', header: 'Period', render: (r) => `${r.year}-${String(r.month).padStart(2, '0')}` },
-    { key: 'employees', header: t('hr.dashboard.kpi.total'), align: 'end', render: (r) => r.employeeCount },
-    { key: 'gross', header: t('hr.payroll.col.gross'), align: 'end', render: (r) => formatIls(Number(r.totalGross)) },
-    { key: 'net', header: t('hr.payroll.col.net'), align: 'end', render: (r) => formatIls(Number(r.totalNet)) },
-    { key: 'status', header: t('fin.revenue.col.status'), render: (r) => <StatusBadge status={r.status} label={t(`hr.payroll.status.${r.status}` as any)} /> },
-    { key: 'paid', header: t('hr.payroll.col.paidAt'), render: (r) => r.paidAt?.slice(0, 10) ?? '—' },
+  const cols: Column<ApiPayrollRow>[] = [
+    {
+      key: 'employee',
+      header: t('payrollColEmployee'),
+      render: (r) => (
+        <div>
+          <p className="font-medium text-slate-900 dark:text-slate-100">{r.userName}</p>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">{positionLabel(r)}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'rate',
+      header: t('payrollColHourlyRate'),
+      align: 'end',
+      render: (r) =>
+        r.hourlyRate != null && r.hourlyRate > 0
+          ? <span className="font-mono tabular-nums">{formatIls(r.hourlyRate)} / h</span>
+          : <span className="text-xs text-rose-600 dark:text-rose-300">{t('salariesNoRate')}</span>,
+    },
+    {
+      key: 'sessions',
+      header: t('payrollSessions'),
+      align: 'end',
+      hideOnMobile: true,
+      render: (r) => <span className="tabular-nums text-slate-700 dark:text-slate-200">{r.sessionsCount}</span>,
+    },
+    {
+      key: 'hours',
+      header: t('payrollColHours'),
+      align: 'end',
+      render: (r) => <span className="font-mono tabular-nums text-slate-900 dark:text-slate-100">{formatHours(r.totalHours)}</span>,
+    },
+    {
+      key: 'earned',
+      header: t('payrollColEarned'),
+      align: 'end',
+      render: (r) =>
+        r.computedEarnings != null
+          ? <span className="font-mono tabular-nums font-semibold text-emerald-700 dark:text-emerald-300">{formatIls(r.computedEarnings)}</span>
+          : <span className="text-xs text-slate-400">—</span>,
+    },
+    {
+      key: 'lastSeen',
+      header: t('payrollColLastSeen'),
+      hideOnMobile: true,
+      render: (r) => r.lastClockInAt ? new Date(r.lastClockInAt).toLocaleString() : '—',
+    },
   ];
 
+  const presetChip = (p: Preset, label: string) => (
+    <button
+      key={p}
+      type="button"
+      onClick={() => applyPreset(p)}
+      className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+        preset === p
+          ? 'bg-indigo-600 text-white shadow-sm'
+          : 'border border-slate-200 bg-white text-slate-600 hover:bg-indigo-50 hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+      }`}
+    >
+      {label}
+    </button>
+  );
+
   return (
-    <div className="space-y-3">
-      <DataTable rows={runs} columns={cols} rowKey={(r) => r.id} loading={loading} empty={t('fin.common.empty')} onRowClick={openRun} />
-      {detailRun && (
-        <FormModal title={`${t('hr.payroll.payslip.title')} — ${detailRun.year}/${detailRun.month}`} open onClose={() => setDetailRun(null)} size="lg" cancelLabel={t('fin.common.cancel')}>
-          <div className="space-y-2 text-sm">
-            {detailSlips.map((p) => (
-              <div key={p.id} className="rounded-lg border border-slate-200 p-2 dark:border-slate-700">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold">{p.userName}</span>
-                  <span><StatusBadge status={p.status} label={t(`hr.payroll.status.${p.status}` as any)} /></span>
-                </div>
-                <div className="mt-1 grid grid-cols-3 text-xs">
-                  <span>Gross: <span className="font-semibold tabular-nums">{formatIls(Number(p.gross))}</span></span>
-                  <span>Ded: <span className="font-semibold tabular-nums">{formatIls(Number(p.totalDeductions))}</span></span>
-                  <span>Net: <span className="font-bold tabular-nums text-emerald-700">{formatIls(Number(p.net))}</span></span>
-                </div>
-              </div>
-            ))}
+    <div className="space-y-4">
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex flex-wrap items-center gap-2">
+          {presetChip('today', t('salariesPresetToday'))}
+          {presetChip('yesterday', t('salariesPresetYesterday'))}
+          {presetChip('this_week', t('salariesPresetThisWeek'))}
+          {presetChip('this_month', t('salariesPresetThisMonth'))}
+          {presetChip('custom', t('salariesPresetCustom'))}
+          <div className="ms-auto flex flex-wrap items-center gap-2">
+            <Field label={t('payrollFrom')}>
+              <input
+                type="date"
+                value={from}
+                onChange={(e) => { setPreset('custom'); setFrom(e.target.value); }}
+                max={to}
+                className={`${inputClass} w-40`}
+              />
+            </Field>
+            <Field label={t('payrollTo')}>
+              <input
+                type="date"
+                value={to}
+                onChange={(e) => { setPreset('custom'); setTo(e.target.value); }}
+                min={from}
+                className={`${inputClass} w-40`}
+              />
+            </Field>
           </div>
-          <div className="mt-3 flex justify-end">
-            <button onClick={() => window.print()} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-              {t('hr.payroll.payslip.print')}
-            </button>
-          </div>
-        </FormModal>
+        </div>
+        <div className="mt-3">
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t('salariesSearchPlaceholder')}
+            className={`${inputClass} w-full max-w-md`}
+          />
+        </div>
+      </section>
+
+      {err && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
+          {err}
+        </div>
       )}
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard label={t('payrollHeadcount')} value={totals.headcount} tone="accent" />
+        <KpiCard label={t('payrollTotalHours')} value={formatHours(totals.totalHours)} tone="neutral" />
+        <KpiCard label={t('payrollHourlyEarnings')} value={formatIls(totals.totalEarnings)} tone="positive" />
+        <KpiCard
+          label={t('payrollAvgHourlyRate')}
+          value={`${formatIls(totals.avgRate)} / h`}
+          tone="warning"
+          hint={`${totals.ratedCount}/${totals.headcount}`}
+        />
+      </div>
+
+      <DataTable
+        rows={filtered}
+        columns={cols}
+        rowKey={(r) => r.userId}
+        loading={loading}
+        empty={t('payrollEmpty')}
+      />
     </div>
   );
 };
@@ -376,14 +349,5 @@ const AddIncrementModal: React.FC<{ open: boolean; onClose: () => void; onCreate
         </Field>
       </div>
     </FormModal>
-  );
-};
-
-const SettingsTab: React.FC = () => {
-  const { t } = useApp();
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-      <p className="text-sm text-slate-500">{t('hr.attendance.settings.lateDeduction')}, {t('hr.attendance.settings.absenceDeduction')} — managed in Attendance → Settings.</p>
-    </div>
   );
 };

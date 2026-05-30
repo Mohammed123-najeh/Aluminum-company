@@ -885,6 +885,13 @@ export const translations = {
     payrollEmpty: 'No employees match the filters.',
     payrollNoSessions: 'No login sessions in this period.',
     payrollStillOpen: 'Still active',
+    salariesPresetToday: 'Today',
+    salariesPresetYesterday: 'Yesterday',
+    salariesPresetThisWeek: 'This week',
+    salariesPresetThisMonth: 'This month',
+    salariesPresetCustom: 'Custom range',
+    salariesSearchPlaceholder: 'Search employee or position…',
+    salariesNoRate: 'No rate set',
 
     // Supervisor team filters
     teamSearchPlaceholder: 'Search name, email, role, job…',
@@ -2495,6 +2502,13 @@ export const translations = {
     payrollEmpty: 'لا يوجد موظفون مطابقون.',
     payrollNoSessions: 'لا توجد جلسات دخول في هذه الفترة.',
     payrollStillOpen: 'لا تزال نشطة',
+    salariesPresetToday: 'اليوم',
+    salariesPresetYesterday: 'الأمس',
+    salariesPresetThisWeek: 'هذا الأسبوع',
+    salariesPresetThisMonth: 'هذا الشهر',
+    salariesPresetCustom: 'فترة مخصصة',
+    salariesSearchPlaceholder: 'ابحث باسم الموظف أو المنصب…',
+    salariesNoRate: 'لم يُحدَّد الأجر',
 
     // Supervisor team filters
     teamSearchPlaceholder: 'ابحث بالاسم أو البريد أو الدور أو المهنة…',
