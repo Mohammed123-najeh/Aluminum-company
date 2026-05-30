@@ -1,57 +1,234 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { User } from '../../types/user';
 import { useApp } from '../../contexts/AppContext';
+import { hrCenterApi, type ApiHrDashboard } from '../../services/api';
+import { formatIls } from '../../utils/currency';
 
 type Props = { users: User[] };
 
-type CardProps = {
+type Trend = { delta: number; positive: boolean } | null;
+
+type TileProps = {
   label: string;
-  value: number;
-  sub: string;
+  value: string;
+  unit?: string;
+  trend?: Trend;
   icon: React.ReactNode;
+  /** Pastel background for the icon square. */
   iconBg: string;
-  valueColor: string;
+  /** Foreground icon color. */
+  iconFg: string;
 };
 
-const StatCard: React.FC<CardProps> = ({ label, value, sub, icon, iconBg, valueColor }) => (
-  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-    <div className="flex items-start justify-between">
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">{label}</p>
-        <p className={`mt-1 text-3xl font-bold tabular-nums ${valueColor}`}>{value}</p>
-        <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">{sub}</p>
+const Tile: React.FC<TileProps> = ({ label, value, unit, trend, icon, iconBg, iconFg }) => (
+  <div className="relative rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
+    {/* top row: trend (start) + icon (end) */}
+    <div className="flex items-start justify-between gap-3">
+      {trend ? (
+        <span
+          className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+            trend.positive
+              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+              : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300'
+          }`}
+        >
+          {trend.positive ? '+' : '−'}
+          {Math.abs(trend.delta)}%
+        </span>
+      ) : (
+        <span aria-hidden className="h-5" />
+      )}
+      <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${iconBg} ${iconFg}`}>
+        {icon}
       </div>
-      <div className={`rounded-xl p-2.5 ${iconBg}`}>{icon}</div>
     </div>
+
+    {/* label + value */}
+    <p className="mt-6 text-[13px] font-medium text-slate-500 dark:text-slate-400">{label}</p>
+    <p className="mt-1 flex items-baseline gap-2 text-3xl font-extrabold tabular-nums text-slate-900 dark:text-slate-100">
+      {value}
+      {unit && (
+        <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{unit}</span>
+      )}
+    </p>
   </div>
 );
 
+// SVG icons matching the screenshot's tone (lucide-ish, stroke 1.8)
+const Icons = {
+  users: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+      <circle cx="9" cy="7" r="4" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
+    </svg>
+  ),
+  userCheck: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+      <circle cx="8.5" cy="7" r="4" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M17 11l2 2 4-4" />
+    </svg>
+  ),
+  userX: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+      <circle cx="8.5" cy="7" r="4" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l5 5M22 8l-5 5" />
+    </svg>
+  ),
+  clock: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <circle cx="12" cy="12" r="10" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2" />
+    </svg>
+  ),
+  alert: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4M12 17h.01" />
+    </svg>
+  ),
+  hours: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <rect x="3" y="4" width="18" height="18" rx="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16 2v4M8 2v4M3 10h18M9 16l2 2 4-4" />
+    </svg>
+  ),
+  money: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+    </svg>
+  ),
+  calendar: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <rect x="3" y="4" width="18" height="18" rx="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16 2v4M8 2v4M3 10h18" />
+    </svg>
+  ),
+};
+
 export const StatsCards: React.FC<Props> = ({ users }) => {
-  const { t } = useApp();
-  const nonAdmin = users.filter((u) => u.role !== 'admin');
-  const total = nonAdmin.length;
-  const active = nonAdmin.filter((u) => u.status === 'active').length;
-  const suspended = nonAdmin.filter((u) => u.status === 'suspended').length;
-  const supervisors = users.filter((u) => u.role === 'supervisor').length;
-  const employees = users.filter((u) => u.role === 'employee').length;
+  const { t, token } = useApp();
+  const [hr, setHr] = useState<ApiHrDashboard | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    hrCenterApi
+      .dashboard(token)
+      .then((d) => { if (!cancelled) setHr(d); })
+      .catch(() => { if (!cancelled) setHr(null); });
+    return () => { cancelled = true; };
+  }, [token]);
+
+  // ── User totals (always available) ───────────────────────────────────
+  const userTotals = useMemo(() => {
+    const nonAdmin = users.filter((u) => u.role !== 'admin');
+    const supervisors = nonAdmin.filter((u) => u.role === 'supervisor').length;
+    const employees = nonAdmin.filter((u) => u.role === 'employee').length;
+    // "+ N new this month" from createdAt — small trend chip on the total tile.
+    const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const newThisMonth = nonAdmin.filter((u) => {
+      const ts = u.createdAt ? new Date(u.createdAt).getTime() : 0;
+      return ts > monthAgo;
+    }).length;
+    return { total: nonAdmin.length, supervisors, employees, newThisMonth };
+  }, [users]);
+
+  // ── HR data with safe fallbacks ──────────────────────────────────────
+  const k = hr?.kpi;
+  const presentToday = k?.presentToday ?? 0;
+  const absentToday = k?.absentToday ?? 0;
+  const lateToday = k?.lateToday ?? 0;
+  const pendingLeave = k?.pendingLeaveRequests ?? 0;
+  const workHoursToday = k?.workHoursToday ?? 0;
+  const dailyPayroll = k?.dailyPayroll ?? 0;
+  const monthlyPayroll = k?.monthlyPayroll ?? 0;
+
+  // Present/Absent percentage chip (positive when most people are present).
+  const totalEmp = userTotals.total || 1;
+  const presentPct = Math.round((presentToday / totalEmp) * 100);
+  const absentPct = Math.round((absentToday / totalEmp) * 100);
+
+  const empUnit = t('hr.kpi.unit.employee');
+  const hourUnit = t('hr.kpi.unit.hour');
+  const reqUnit = t('hr.kpi.unit.request');
+  const ilsUnit = t('currencyIls');
 
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-      <StatCard label={t('totalAccounts')} value={total} sub={`${suspended} ${t('statusSuspended').toLowerCase()}`}
-        valueColor="text-slate-800 dark:text-slate-100" iconBg="bg-slate-100 dark:bg-slate-700"
-        icon={<svg className="h-5 w-5 text-slate-500 dark:text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" /></svg>}
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <Tile
+        label={t('hr.dashboard.kpi.total')}
+        value={String(userTotals.total)}
+        unit={empUnit}
+        trend={userTotals.newThisMonth > 0 ? { delta: userTotals.newThisMonth, positive: true } : null}
+        icon={Icons.users}
+        iconBg="bg-indigo-50 dark:bg-indigo-950/40"
+        iconFg="text-indigo-600 dark:text-indigo-300"
       />
-      <StatCard label={t('active')} value={active} sub={t('currentlyActive')}
-        valueColor="text-emerald-600 dark:text-emerald-400" iconBg="bg-emerald-50 dark:bg-emerald-900/30"
-        icon={<svg className="h-5 w-5 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+      <Tile
+        label={t('hr.dashboard.kpi.present')}
+        value={String(presentToday)}
+        unit={empUnit}
+        trend={presentPct > 0 ? { delta: presentPct, positive: true } : null}
+        icon={Icons.userCheck}
+        iconBg="bg-emerald-50 dark:bg-emerald-950/40"
+        iconFg="text-emerald-600 dark:text-emerald-300"
       />
-      <StatCard label={t('supervisors')} value={supervisors} sub={t('teamLeads')}
-        valueColor="text-indigo-600 dark:text-indigo-400" iconBg="bg-indigo-50 dark:bg-indigo-900/30"
-        icon={<svg className="h-5 w-5 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75l2.25 2.25 4.5-4.5m5.25 3a8.25 8.25 0 11-16.5 0 8.25 8.25 0 0116.5 0z" /></svg>}
+      <Tile
+        label={t('hr.dashboard.kpi.absent')}
+        value={String(absentToday)}
+        unit={empUnit}
+        trend={absentToday > 0 ? { delta: absentPct, positive: false } : null}
+        icon={Icons.userX}
+        iconBg="bg-rose-50 dark:bg-rose-950/40"
+        iconFg="text-rose-600 dark:text-rose-300"
       />
-      <StatCard label={t('employees')} value={employees} sub={t('allDepartments')}
-        valueColor="text-orange-600 dark:text-orange-400" iconBg="bg-orange-50 dark:bg-orange-900/30"
-        icon={<svg className="h-5 w-5 text-orange-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 14.15v4.25c0 1.094-.787 2.036-1.872 2.18-2.087.277-4.216.42-6.378.42s-4.291-.143-6.378-.42c-1.085-.144-1.872-1.086-1.872-2.18v-4.25m16.5 0a2.18 2.18 0 00.75-1.661V8.706c0-1.081-.768-2.015-1.837-2.175a48.114 48.114 0 00-3.413-.387m4.5 8.006c-.194.165-.42.295-.673.38A23.978 23.978 0 0112 15.75c-2.648 0-5.195-.429-7.577-1.22a2.016 2.016 0 01-.673-.38m0 0A2.18 2.18 0 013 12.489V8.706c0-1.081.768-2.015 1.837-2.175a48.111 48.111 0 013.413-.387m7.5 0V5.25A2.25 2.25 0 0013.5 3h-3a2.25 2.25 0 00-2.25 2.25v.894m7.5 0a48.667 48.667 0 00-7.5 0M12 12.75h.008v.008H12v-.008z" /></svg>}
+      <Tile
+        label={t('hr.dashboard.kpi.late')}
+        value={String(lateToday)}
+        unit={empUnit}
+        trend={null}
+        icon={Icons.alert}
+        iconBg="bg-amber-50 dark:bg-amber-950/40"
+        iconFg="text-amber-600 dark:text-amber-300"
+      />
+      <Tile
+        label={t('hr.dashboard.kpi.workHoursToday')}
+        value={String(workHoursToday)}
+        unit={hourUnit}
+        trend={null}
+        icon={Icons.hours}
+        iconBg="bg-blue-50 dark:bg-blue-950/40"
+        iconFg="text-blue-600 dark:text-blue-300"
+      />
+      <Tile
+        label={t('hr.dashboard.kpi.dailyPayroll')}
+        value={formatIls(dailyPayroll).replace(/[^\d.,-]/g, '').trim()}
+        unit={ilsUnit}
+        trend={null}
+        icon={Icons.money}
+        iconBg="bg-emerald-50 dark:bg-emerald-950/40"
+        iconFg="text-emerald-600 dark:text-emerald-300"
+      />
+      <Tile
+        label={t('hr.dashboard.kpi.monthlyPayroll')}
+        value={formatIls(monthlyPayroll).replace(/[^\d.,-]/g, '').trim()}
+        unit={ilsUnit}
+        trend={null}
+        icon={Icons.money}
+        iconBg="bg-violet-50 dark:bg-violet-950/40"
+        iconFg="text-violet-600 dark:text-violet-300"
+      />
+      <Tile
+        label={t('hr.dashboard.kpi.pendingLeaveRequests')}
+        value={String(pendingLeave)}
+        unit={reqUnit}
+        trend={null}
+        icon={Icons.calendar}
+        iconBg="bg-orange-50 dark:bg-orange-950/40"
+        iconFg="text-orange-600 dark:text-orange-300"
       />
     </div>
   );
