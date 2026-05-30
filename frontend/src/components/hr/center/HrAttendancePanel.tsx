@@ -34,11 +34,14 @@ export const HrAttendancePanel: React.FC = () => {
   );
 };
 
+type AttendanceFilter = 'all' | 'present' | 'late' | 'absent' | 'leave' | 'mission';
+
 const DailyTab: React.FC = () => {
   const { token, t } = useApp();
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [logs, setLogs] = useState<ApiAttendanceLogRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<AttendanceFilter>('all');
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -60,6 +63,8 @@ const DailyTab: React.FC = () => {
     leave: logs.filter((l) => l.status === 'leave').length,
     mission: logs.filter((l) => l.status === 'mission').length,
   };
+  const filteredLogs = filter === 'all' ? logs : logs.filter((l) => l.status === filter);
+  const toggle = (f: Exclude<AttendanceFilter, 'all'>) => setFilter((cur) => (cur === f ? 'all' : f));
 
   const justify = async (id: string) => {
     if (!token) return;
@@ -93,27 +98,58 @@ const DailyTab: React.FC = () => {
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputClass + ' w-44'} />
         <div className="ms-2 flex flex-wrap gap-2 text-xs">
-          <Pill tone="emerald" label={t('hr.attendance.summary.present')} count={counts.present} />
-          <Pill tone="amber" label={t('hr.attendance.summary.late')} count={counts.late} />
-          <Pill tone="rose" label={t('hr.attendance.summary.absent')} count={counts.absent} />
-          <Pill tone="violet" label={t('hr.attendance.summary.leave')} count={counts.leave} />
-          <Pill tone="indigo" label={t('hr.attendance.summary.mission')} count={counts.mission} />
+          <Pill tone="emerald" label={t('hr.attendance.summary.present')} count={counts.present} active={filter === 'present'} onClick={() => toggle('present')} />
+          <Pill tone="amber" label={t('hr.attendance.summary.late')} count={counts.late} active={filter === 'late'} onClick={() => toggle('late')} />
+          <Pill tone="rose" label={t('hr.attendance.summary.absent')} count={counts.absent} active={filter === 'absent'} onClick={() => toggle('absent')} />
+          <Pill tone="violet" label={t('hr.attendance.summary.leave')} count={counts.leave} active={filter === 'leave'} onClick={() => toggle('leave')} />
+          <Pill tone="indigo" label={t('hr.attendance.summary.mission')} count={counts.mission} active={filter === 'mission'} onClick={() => toggle('mission')} />
+          {filter !== 'all' && (
+            <button onClick={() => setFilter('all')} className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300">
+              ×
+            </button>
+          )}
         </div>
       </div>
-      <DataTable rows={logs} columns={cols} rowKey={(r) => r.id} loading={loading} empty={t('fin.common.empty')} />
+      <DataTable rows={filteredLogs} columns={cols} rowKey={(r) => r.id} loading={loading} empty={t('fin.common.empty')} />
     </div>
   );
 };
 
-const Pill: React.FC<{ tone: 'emerald' | 'amber' | 'rose' | 'violet' | 'indigo'; label: string; count: number }> = ({ tone, label, count }) => {
-  const cls: Record<typeof tone, string> = {
-    emerald: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-200',
-    amber: 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-200',
-    rose: 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-200',
-    violet: 'bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-200',
-    indigo: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-200',
+type PillTone = 'emerald' | 'amber' | 'rose' | 'violet' | 'indigo';
+const Pill: React.FC<{ tone: PillTone; label: string; count: number; active?: boolean; onClick?: () => void }> = ({ tone, label, count, active, onClick }) => {
+  const dot: Record<PillTone, string> = {
+    emerald: 'bg-emerald-500',
+    amber: 'bg-amber-500',
+    rose: 'bg-rose-500',
+    violet: 'bg-violet-500',
+    indigo: 'bg-indigo-500',
   };
-  return <span className={`rounded-full px-2 py-0.5 font-semibold ${cls[tone]}`}>{label}: {count}</span>;
+  const idle: Record<PillTone, string> = {
+    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-900/60',
+    amber: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900/60',
+    rose: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-900/60',
+    violet: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-200 dark:border-violet-900/60',
+    indigo: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-200 dark:border-indigo-900/60',
+  };
+  const activeCls: Record<PillTone, string> = {
+    emerald: 'bg-emerald-500 text-white border-emerald-500 shadow-sm',
+    amber: 'bg-amber-500 text-white border-amber-500 shadow-sm',
+    rose: 'bg-rose-500 text-white border-rose-500 shadow-sm',
+    violet: 'bg-violet-500 text-white border-violet-500 shadow-sm',
+    indigo: 'bg-indigo-500 text-white border-indigo-500 shadow-sm',
+  };
+  const cls = active ? activeCls[tone] : idle[tone];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-semibold transition disabled:cursor-default ${cls}`}
+    >
+      <span className={`inline-block h-1.5 w-1.5 rounded-full ${active ? 'bg-white' : dot[tone]}`} />
+      {label}: {count}
+    </button>
+  );
 };
 
 const STATUS_GLYPH: Record<string, string> = {

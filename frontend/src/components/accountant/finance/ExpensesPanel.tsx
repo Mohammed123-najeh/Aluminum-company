@@ -89,6 +89,39 @@ export const ExpensesPanel: React.FC = () => {
         <CategoriesManager categories={categories} onChange={load} />
       ) : (
         <>
+          {categories.length > 0 && (
+            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+              <button
+                type="button"
+                onClick={() => setCatFilter('')}
+                className={`shrink-0 rounded-full px-4 py-1.5 text-sm font-semibold transition ${
+                  catFilter === ''
+                    ? 'border border-indigo-300 bg-indigo-100 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200'
+                    : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+                }`}
+              >
+                {t('fin.common.all')}
+              </button>
+              {categories.map((c) => {
+                const selected = catFilter === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setCatFilter(selected ? '' : c.id)}
+                    className={`shrink-0 rounded-full px-4 py-1.5 text-sm font-semibold transition ${
+                      selected
+                        ? 'border border-indigo-300 bg-indigo-100 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-200'
+                        : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+                    }`}
+                  >
+                    {lang === 'ar' ? c.nameAr : c.nameEn}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           <FilterBar>
             <select value={status} onChange={(e) => setStatus(e.target.value)} className={`${inputClass} w-40`}>
               <option value="">{t('fin.common.all')}</option>
@@ -96,10 +129,6 @@ export const ExpensesPanel: React.FC = () => {
               <option value="approved">{t('fin.expenses.status.approved')}</option>
               <option value="rejected">{t('fin.expenses.status.rejected')}</option>
               <option value="paid">{t('fin.expenses.status.paid')}</option>
-            </select>
-            <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} className={`${inputClass} w-48`}>
-              <option value="">{t('fin.common.all')}</option>
-              {categories.map((c) => <option key={c.id} value={c.id}>{lang === 'ar' ? c.nameAr : c.nameEn}</option>)}
             </select>
           </FilterBar>
 

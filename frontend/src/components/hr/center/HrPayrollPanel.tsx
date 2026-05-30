@@ -33,6 +33,44 @@ export const HrPayrollPanel: React.FC = () => {
   );
 };
 
+const PayrollStepper: React.FC<{ step: 1 | 2 | 3; labels: [string, string, string] }> = ({ step, labels }) => (
+  <ol className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+    {labels.map((label, i) => {
+      const idx = (i + 1) as 1 | 2 | 3;
+      const done = step > idx;
+      const active = step === idx;
+      const circleCls = done
+        ? 'bg-emerald-500 text-white'
+        : active
+          ? 'bg-indigo-600 text-white ring-4 ring-indigo-200 dark:ring-indigo-900/60'
+          : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500';
+      const labelCls = done || active ? 'text-slate-900 dark:text-slate-100' : 'text-slate-400 dark:text-slate-500';
+      const connectorCls = done ? 'bg-emerald-400' : 'bg-slate-200 dark:bg-slate-700';
+      return (
+        <React.Fragment key={idx}>
+          <li className="flex items-center gap-2">
+            <span className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition ${circleCls}`}>
+              {done ? (
+                <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                  <path
+                    fillRule="evenodd"
+                    d="M16.7 5.3a1 1 0 0 1 0 1.4l-7 7a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4L9 11.6l6.3-6.3a1 1 0 0 1 1.4 0z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              ) : (
+                idx
+              )}
+            </span>
+            <span className={`text-sm font-semibold ${labelCls}`}>{label}</span>
+          </li>
+          {i < labels.length - 1 && <li className={`h-0.5 flex-1 rounded-full ${connectorCls}`} />}
+        </React.Fragment>
+      );
+    })}
+  </ol>
+);
+
 const RunTab: React.FC = () => {
   const { token, t } = useApp();
   const today = new Date();
@@ -102,8 +140,12 @@ const RunTab: React.FC = () => {
     ) },
   ];
 
+  const currentStep: 1 | 2 | 3 = !run ? 1 : run.status === 'draft' ? 2 : 3;
+
   return (
     <div className="space-y-4">
+      <PayrollStepper step={currentStep} labels={[t('hr.payroll.run.step1'), t('hr.payroll.run.step2'), t('hr.payroll.run.step3')]} />
+
       <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
         <h3 className="mb-3 text-sm font-semibold">{t('hr.payroll.run.step1')}</h3>
         <div className="flex flex-wrap items-end gap-2">
