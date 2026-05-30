@@ -69,6 +69,8 @@ export function useTasks(filters?: TaskFilters) {
           customer_phone: payload.customer_phone ?? null,
           client_id: payload.client_id ?? null,
           order_id: payload.order_id ?? null,
+          total_amount: payload.total_amount ?? null,
+          amount_paid: payload.amount_paid ?? null,
         },
         token,
       );
