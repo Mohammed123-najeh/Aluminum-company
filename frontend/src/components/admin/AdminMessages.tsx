@@ -3,6 +3,7 @@ import { useApp } from '../../contexts/AppContext';
 import type { User } from '../../types/user';
 import type { ApiMessage } from '../../services/api';
 import type { MessageThreadSummary } from '../../hooks/useMessages';
+import { onFocusFlash, flashElement } from '../../utils/focusFlash';
 
 type Props = {
   staff: User[];
@@ -45,6 +46,15 @@ export const AdminMessages: React.FC<Props> = ({
   useEffect(() => {
     setBody('');
   }, [selectedReceiverId]);
+
+  useEffect(() => {
+    return onFocusFlash('message', (messageId) => {
+      window.requestAnimationFrame(() => {
+        const node = document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`);
+        flashElement(node);
+      });
+    });
+  }, []);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -135,6 +145,7 @@ export const AdminMessages: React.FC<Props> = ({
                 thread.map((m) => (
                   <div
                     key={m.id}
+                    data-message-id={m.id}
                     className={`flex ${m.senderId === selectedReceiverId ? 'justify-start' : 'justify-end'}`}
                   >
                     <div

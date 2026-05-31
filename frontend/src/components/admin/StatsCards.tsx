@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { User } from '../../types/user';
 import { useApp } from '../../contexts/AppContext';
-import { hrCenterApi, type ApiHrDashboard } from '../../services/api';
-import { formatIls } from '../../utils/currency';
+import { hrCenterApi, type ApiHrDashboard, adminAnalyticsApi, type ApiAdminAnalytics } from '../../services/api';
 
 type Props = { users: User[] };
 
@@ -89,21 +88,26 @@ const Icons = {
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4M12 17h.01" />
     </svg>
   ),
-  hours: (
+  orders: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
-      <rect x="3" y="4" width="18" height="18" rx="2" strokeLinecap="round" strokeLinejoin="round" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M16 2v4M8 2v4M3 10h18M9 16l2 2 4-4" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l-1 11H6L5 9z" />
     </svg>
   ),
-  money: (
+  list: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
     </svg>
   ),
-  calendar: (
+  alertClock: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
-      <rect x="3" y="4" width="18" height="18" rx="2" strokeLinecap="round" strokeLinejoin="round" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M16 2v4M8 2v4M3 10h18" />
+      <circle cx="12" cy="13" r="8" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4M12 17h.01M9 2h6" />
+    </svg>
+  ),
+  box: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12" />
     </svg>
   ),
 };
@@ -111,6 +115,7 @@ const Icons = {
 export const StatsCards: React.FC<Props> = ({ users }) => {
   const { t, token } = useApp();
   const [hr, setHr] = useState<ApiHrDashboard | null>(null);
+  const [adminA, setAdminA] = useState<ApiAdminAnalytics | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -119,6 +124,10 @@ export const StatsCards: React.FC<Props> = ({ users }) => {
       .dashboard(token)
       .then((d) => { if (!cancelled) setHr(d); })
       .catch(() => { if (!cancelled) setHr(null); });
+    adminAnalyticsApi
+      .get(token)
+      .then((d) => { if (!cancelled) setAdminA(d); })
+      .catch(() => { if (!cancelled) setAdminA(null); });
     return () => { cancelled = true; };
   }, [token]);
 
@@ -141,20 +150,26 @@ export const StatsCards: React.FC<Props> = ({ users }) => {
   const presentToday = k?.presentToday ?? 0;
   const absentToday = k?.absentToday ?? 0;
   const lateToday = k?.lateToday ?? 0;
-  const pendingLeave = k?.pendingLeaveRequests ?? 0;
-  const workHoursToday = k?.workHoursToday ?? 0;
-  const dailyPayroll = k?.dailyPayroll ?? 0;
-  const monthlyPayroll = k?.monthlyPayroll ?? 0;
 
   // Present/Absent percentage chip (positive when most people are present).
   const totalEmp = userTotals.total || 1;
   const presentPct = Math.round((presentToday / totalEmp) * 100);
   const absentPct = Math.round((absentToday / totalEmp) * 100);
 
+  // ── Operational pulse (from /admin/analytics) ────────────────────────
+  const orderStatuses = adminA?.orders.byStatus ?? {};
+  const activeOrders = (orderStatuses.submitted ?? 0) + (orderStatuses.in_progress ?? 0);
+  const taskStatuses = adminA?.tasks.byStatus;
+  const openTasks = (taskStatuses?.pending ?? 0) + (taskStatuses?.in_progress ?? 0);
+  const overdueTasks = adminA?.tasks.overdue ?? 0;
+  const inventoryUnits = adminA?.storehouse.totalQuantityUnits ?? 0;
+  const totalTasks = adminA?.tasks.total ?? 0;
+  const overduePct = totalTasks > 0 ? Math.round((overdueTasks / totalTasks) * 100) : 0;
+
   const empUnit = t('hr.kpi.unit.employee');
-  const hourUnit = t('hr.kpi.unit.hour');
-  const reqUnit = t('hr.kpi.unit.request');
-  const ilsUnit = t('currencyIls');
+  const orderUnit = t('hr.kpi.unit.order');
+  const taskUnit = t('hr.kpi.unit.task');
+  const unitUnit = t('hr.kpi.unit.unit');
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -195,40 +210,40 @@ export const StatsCards: React.FC<Props> = ({ users }) => {
         iconFg="text-amber-600 dark:text-amber-300"
       />
       <Tile
-        label={t('hr.dashboard.kpi.workHoursToday')}
-        value={String(workHoursToday)}
-        unit={hourUnit}
+        label={t('admin.kpi.activeOrders')}
+        value={String(activeOrders)}
+        unit={orderUnit}
         trend={null}
-        icon={Icons.hours}
+        icon={Icons.orders}
         iconBg="bg-blue-50 dark:bg-blue-950/40"
         iconFg="text-blue-600 dark:text-blue-300"
       />
       <Tile
-        label={t('hr.dashboard.kpi.dailyPayroll')}
-        value={formatIls(dailyPayroll).replace(/[^\d.,-]/g, '').trim()}
-        unit={ilsUnit}
+        label={t('admin.kpi.openTasks')}
+        value={String(openTasks)}
+        unit={taskUnit}
         trend={null}
-        icon={Icons.money}
-        iconBg="bg-emerald-50 dark:bg-emerald-950/40"
-        iconFg="text-emerald-600 dark:text-emerald-300"
+        icon={Icons.list}
+        iconBg="bg-sky-50 dark:bg-sky-950/40"
+        iconFg="text-sky-600 dark:text-sky-300"
       />
       <Tile
-        label={t('hr.dashboard.kpi.monthlyPayroll')}
-        value={formatIls(monthlyPayroll).replace(/[^\d.,-]/g, '').trim()}
-        unit={ilsUnit}
+        label={t('admin.kpi.overdueTasks')}
+        value={String(overdueTasks)}
+        unit={taskUnit}
+        trend={overdueTasks > 0 ? { delta: overduePct, positive: false } : null}
+        icon={Icons.alertClock}
+        iconBg="bg-rose-50 dark:bg-rose-950/40"
+        iconFg="text-rose-600 dark:text-rose-300"
+      />
+      <Tile
+        label={t('admin.kpi.inventoryUnits')}
+        value={inventoryUnits.toLocaleString()}
+        unit={unitUnit}
         trend={null}
-        icon={Icons.money}
+        icon={Icons.box}
         iconBg="bg-violet-50 dark:bg-violet-950/40"
         iconFg="text-violet-600 dark:text-violet-300"
-      />
-      <Tile
-        label={t('hr.dashboard.kpi.pendingLeaveRequests')}
-        value={String(pendingLeave)}
-        unit={reqUnit}
-        trend={null}
-        icon={Icons.calendar}
-        iconBg="bg-orange-50 dark:bg-orange-950/40"
-        iconFg="text-orange-600 dark:text-orange-300"
       />
     </div>
   );

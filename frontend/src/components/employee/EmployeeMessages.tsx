@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import { messagesApi, type ApiMessage, type ApiMessageContact, type ApiMessageThreadSummary, type ApiMessageInboxSummary, type ApiTask } from '../../services/api';
 import type { MessageThreadSummary } from '../../hooks/useMessages';
+import { onFocusFlash, flashElement } from '../../utils/focusFlash';
 
 function isInboxSummary(s: MessageThreadSummary): s is ApiMessageInboxSummary {
   return 'senderId' in s;
@@ -63,7 +64,7 @@ export const EmployeeMessages: React.FC<Props> = ({
 
   const orderedContacts = useMemo(() => {
     const order: Record<ApiMessageContact['relation'], number> = {
-      supervisor: 0, teammate: 1, hr: 2, team: 3, admin: 4, staff: 5,
+      supervisor: 0, teammate: 1, hr: 2, finance: 3, team: 4, admin: 5, staff: 6,
     };
     return [...contacts].sort((a, b) => {
       const r = order[a.relation] - order[b.relation];
@@ -81,6 +82,16 @@ export const EmployeeMessages: React.FC<Props> = ({
     setReplyTaskId('');
     setBody('');
   }, [selectedSenderId]);
+
+  // Notification deep-link: scroll the matching message into view and flash it.
+  useEffect(() => {
+    return onFocusFlash('message', (messageId) => {
+      window.requestAnimationFrame(() => {
+        const node = document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`);
+        flashElement(node);
+      });
+    });
+  }, []);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -173,6 +184,7 @@ export const EmployeeMessages: React.FC<Props> = ({
                   {thread.map((m) => (
                     <div
                       key={m.id}
+                      data-message-id={m.id}
                       className={`flex ${m.senderId === selectedSenderId ? 'justify-start' : 'justify-end'}`}
                     >
                       <div

@@ -431,60 +431,6 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
             </div>
           </Section>
 
-          {/* Payment */}
-          <Section title={t('customOrderSectionPayment')}>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label={t('customOrderPaymentTotal')}>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  step="0.01"
-                  value={totalAmountStr}
-                  onChange={(e) => setTotalAmountStr(e.target.value)}
-                  className={inputCls}
-                  placeholder="0.00"
-                  dir="ltr"
-                />
-              </Field>
-              <Field label={t('customOrderPaymentPaid')}>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  step="0.01"
-                  value={amountPaidStr}
-                  onChange={(e) => setAmountPaidStr(e.target.value)}
-                  className={inputCls}
-                  placeholder="0.00"
-                  dir="ltr"
-                />
-              </Field>
-              <Field label={t('customOrderPaymentRemaining')}>
-                {(() => {
-                  const total = totalAmountStr.trim() ? Number(totalAmountStr) : null;
-                  const paid = amountPaidStr.trim() ? Number(amountPaidStr) : 0;
-                  const remaining = total !== null && Number.isFinite(total) && Number.isFinite(paid)
-                    ? Math.max(0, total - paid)
-                    : null;
-                  const over = total !== null && Number.isFinite(total) && Number.isFinite(paid) && paid > total + 0.009;
-                  return (
-                    <input
-                      readOnly
-                      value={remaining !== null ? remaining.toFixed(2) : ''}
-                      placeholder="0.00"
-                      className={`${inputCls} cursor-default ${over ? 'text-rose-600 dark:text-rose-300' : 'text-emerald-700 dark:text-emerald-300'}`}
-                      dir="ltr"
-                    />
-                  );
-                })()}
-              </Field>
-            </div>
-            <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-              {t('customOrderPaymentHint')}
-            </p>
-          </Section>
-
           {/* Product cards */}
           <section>
             <div className="mb-3 flex items-center justify-between gap-2">
@@ -546,6 +492,62 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
                 onRemove={(id) => setAssigneeIds((prev) => prev.filter((x) => x !== id))}
                 emptyLabel={t('customOrderAllAssigned')}
               />
+            </Section>
+          )}
+
+          {/* Payment — appears after cards are added; price is set once all items are listed. */}
+          {cards.length > 0 && (
+            <Section title={t('customOrderSectionPayment')}>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <Field label={t('customOrderPaymentTotal')}>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={totalAmountStr}
+                    onChange={(e) => setTotalAmountStr(e.target.value)}
+                    className={inputCls}
+                    placeholder={totalPrice > 0 ? totalPrice.toFixed(2) : '0.00'}
+                    dir="ltr"
+                  />
+                </Field>
+                <Field label={t('customOrderPaymentPaid')}>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={amountPaidStr}
+                    onChange={(e) => setAmountPaidStr(e.target.value)}
+                    className={inputCls}
+                    placeholder="0.00"
+                    dir="ltr"
+                  />
+                </Field>
+                <Field label={t('customOrderPaymentRemaining')}>
+                  {(() => {
+                    const total = totalAmountStr.trim() ? Number(totalAmountStr) : null;
+                    const paid = amountPaidStr.trim() ? Number(amountPaidStr) : 0;
+                    const remaining = total !== null && Number.isFinite(total) && Number.isFinite(paid)
+                      ? Math.max(0, total - paid)
+                      : null;
+                    const over = total !== null && Number.isFinite(total) && Number.isFinite(paid) && paid > total + 0.009;
+                    return (
+                      <input
+                        readOnly
+                        value={remaining !== null ? remaining.toFixed(2) : ''}
+                        placeholder="0.00"
+                        className={`${inputCls} cursor-default ${over ? 'text-rose-600 dark:text-rose-300' : 'text-emerald-700 dark:text-emerald-300'}`}
+                        dir="ltr"
+                      />
+                    );
+                  })()}
+                </Field>
+              </div>
+              <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                {t('customOrderPaymentHint')}
+              </p>
             </Section>
           )}
 

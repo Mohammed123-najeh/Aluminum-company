@@ -5,6 +5,7 @@ import type { ApiOrder } from '../../services/api';
 import { ordersApi } from '../../services/api';
 import { formatIls } from '../../utils/currency';
 import { DistributionBar, MiniStat } from './AdminAnalytics';
+import { AnalyticsDateFilter, type AnalyticsRange } from './AnalyticsDateFilter';
 
 const RECENT_RECEIPTS = 25;
 
@@ -14,7 +15,8 @@ function customerLabel(o: ApiOrder): string {
 
 export const AdminFinancialAnalytics: React.FC = () => {
   const { t, token } = useApp();
-  const { data, loading, error, refresh } = useAdminAnalytics();
+  const [range, setRange] = useState<AnalyticsRange>(null);
+  const { data, loading, error, refresh } = useAdminAnalytics(range);
   const [recentReceipts, setRecentReceipts] = useState<ApiOrder[]>([]);
   const [receiptsLoading, setReceiptsLoading] = useState(false);
 
@@ -26,14 +28,23 @@ export const AdminFinancialAnalytics: React.FC = () => {
     setReceiptsLoading(true);
     try {
       const rows = await ordersApi.list(token, { receipts_only: true });
-      const sorted = [...rows].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      let scoped = rows;
+      if (range) {
+        const fromMs = new Date(`${range.from}T00:00:00`).getTime();
+        const toMs = new Date(`${range.to}T23:59:59`).getTime();
+        scoped = rows.filter((o) => {
+          const ts = new Date(o.updatedAt).getTime();
+          return ts >= fromMs && ts <= toMs;
+        });
+      }
+      const sorted = [...scoped].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
       setRecentReceipts(sorted.slice(0, RECENT_RECEIPTS));
     } catch {
       setRecentReceipts([]);
     } finally {
       setReceiptsLoading(false);
     }
-  }, [token]);
+  }, [token, range]);
 
   useEffect(() => {
     void loadReceipts();
@@ -92,7 +103,7 @@ export const AdminFinancialAnalytics: React.FC = () => {
   }
 
   return (
-    <div className="space-y-8 pb-8">
+    <div className="space-y-6 pb-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{t('adminFinancialDashboardTitle')}</h2>
@@ -115,6 +126,8 @@ export const AdminFinancialAnalytics: React.FC = () => {
           </button>
         </div>
       </div>
+
+      <AnalyticsDateFilter value={range} onChange={setRange} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
         <MiniStat

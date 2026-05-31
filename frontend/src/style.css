@@ -52,3 +52,21 @@ body {
     display: none !important;
   }
 }
+
+/* Notification deep-link highlight: applied by focusFlash for ~2s after the
+ * user clicks a notification, so the target row stands out as it scrolls in. */
+@keyframes flash-target-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.45); background-color: rgba(199, 210, 254, 0.55); }
+  60% { box-shadow: 0 0 0 6px rgba(99, 102, 241, 0); background-color: rgba(199, 210, 254, 0.25); }
+  100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); background-color: transparent; }
+}
+.flash-target {
+  animation: flash-target-pulse 2s ease-out 1;
+  border-radius: 0.75rem;
+  outline: 2px solid rgba(99, 102, 241, 0.55);
+  outline-offset: 2px;
+  transition: outline-color 1.5s ease-out;
+}
+.dark .flash-target {
+  outline-color: rgba(165, 180, 252, 0.5);
+}

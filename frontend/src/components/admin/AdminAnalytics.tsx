@@ -1,7 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import { useAdminAnalytics } from '../../hooks/useAdminAnalytics';
 import type { TaskStatus } from '../../services/api';
+import { formatIls } from '../../utils/currency';
+import { AnalyticsDateFilter, type AnalyticsRange } from './AnalyticsDateFilter';
 
 const TASK_STATUS_ORDER: TaskStatus[] = ['pending', 'in_progress', 'completed', 'cancelled'];
 
@@ -34,6 +36,99 @@ const ORDER_LABEL: Record<(typeof ORDER_KEYS)[number], OrderStatusKey> = {
   in_progress: 'adminOrderInProgress',
   completed: 'adminOrderCompleted',
   cancelled: 'adminOrderCancelled',
+};
+
+/**
+ * Financial KPI tile — pastel icon square top-end, trend chip top-start,
+ * big value with smaller unit suffix. Used by the analytics page top row.
+ * `goodWhenDown` flips the chip color (expenses going down is good).
+ */
+function FinTile({
+  label,
+  value,
+  unit,
+  deltaPct,
+  goodWhenDown = false,
+  hint,
+  icon,
+  iconBg,
+  iconFg,
+}: {
+  label: string;
+  value: string;
+  unit?: string;
+  deltaPct: number | null;
+  goodWhenDown?: boolean;
+  hint?: string;
+  icon: React.ReactNode;
+  iconBg: string;
+  iconFg: string;
+}) {
+  const showChip = deltaPct !== null && Math.abs(deltaPct) >= 0.1;
+  const positive = showChip
+    ? goodWhenDown
+      ? (deltaPct as number) < 0
+      : (deltaPct as number) > 0
+    : false;
+  const signed = showChip ? `${(deltaPct as number) > 0 ? '+' : ''}${(deltaPct as number).toFixed(0)}%` : '';
+  return (
+    <div className="relative rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
+      <div className="flex items-start justify-between gap-3">
+        {showChip ? (
+          <span
+            className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+              positive
+                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300'
+            }`}
+            title={hint}
+          >
+            {signed}
+          </span>
+        ) : (
+          <span aria-hidden className="h-5" />
+        )}
+        <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${iconBg} ${iconFg}`}>
+          {icon}
+        </div>
+      </div>
+      <p className="mt-6 text-[13px] font-medium text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="mt-1 flex items-baseline gap-2 text-3xl font-extrabold tabular-nums text-slate-900 dark:text-slate-100">
+        {value}
+        {unit && <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{unit}</span>}
+      </p>
+    </div>
+  );
+}
+
+const FinIcons = {
+  arrowUp: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 17l6-6 4 4 8-8M14 7h7v7" />
+    </svg>
+  ),
+  arrowDown: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 7l6 6 4-4 8 8M14 17h7v-7" />
+    </svg>
+  ),
+  dollar: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+    </svg>
+  ),
+  doc: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14 2v6h6M8 13h8M8 17h5" />
+    </svg>
+  ),
+  alert: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5">
+      <circle cx="12" cy="12" r="10" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4M12 16h.01" />
+    </svg>
+  ),
 };
 
 export function MiniStat({
@@ -88,7 +183,8 @@ export function DistributionBar({
 
 export const AdminAnalytics: React.FC = () => {
   const { t } = useApp();
-  const { data, loading, error, refresh } = useAdminAnalytics();
+  const [range, setRange] = useState<AnalyticsRange>(null);
+  const { data, loading, error, refresh } = useAdminAnalytics(range);
 
   const taskSegments = useMemo(() => {
     if (!data) return [];
@@ -149,7 +245,7 @@ export const AdminAnalytics: React.FC = () => {
   const gen = new Date(data.generatedAt).toLocaleString();
 
   return (
-    <div className="space-y-8 pb-8">
+    <div className="space-y-6 pb-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm text-slate-500 dark:text-slate-400">{t('adminAnalyticsIntro')}</p>
@@ -167,48 +263,146 @@ export const AdminAnalytics: React.FC = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-6">
-        <MiniStat
-          label={t('adminAnalyticsCardUsers')}
-          value={data.users.totalNonAdmin}
-          hint={`${data.users.active} ${t('active').toLowerCase()} · ${data.users.suspended} ${t('statusSuspended').toLowerCase()}`}
-          accent="text-slate-800 dark:text-slate-100"
-        />
-        <MiniStat
-          label={t('supervisors')}
-          value={data.users.supervisors}
-          hint={t('adminAnalyticsCardSupervisorsHint')}
-          accent="text-indigo-600 dark:text-indigo-400"
-        />
-        <MiniStat
-          label={t('employees')}
-          value={data.users.employees}
-          hint={
-            data.users.employeesWithoutSupervisor > 0
-              ? `${data.users.employeesWithoutSupervisor} ${t('adminEmployeesUnassigned')}`
-              : t('adminAllEmployeesAssigned')
-          }
-          accent="text-orange-600 dark:text-orange-400"
-        />
-        <MiniStat
-          label={t('tasks')}
-          value={data.tasks.total}
-          hint={`${data.tasks.overdue} ${t('analyticsOverdue').toLowerCase()}`}
-          accent="text-violet-600 dark:text-violet-400"
-        />
-        <MiniStat
-          label={t('orders')}
-          value={data.orders.total}
-          hint={t('adminAnalyticsCardOrdersHint')}
-          accent="text-sky-600 dark:text-sky-400"
-        />
-        <MiniStat
-          label={t('adminAnalyticsCardMessages')}
-          value={data.messages.last7Days}
-          hint={`${data.messages.total} ${t('adminAnalyticsTotalMessages')}`}
-          accent="text-teal-600 dark:text-teal-400"
-        />
-      </div>
+      <AnalyticsDateFilter value={range} onChange={setRange} />
+
+      {(() => {
+        const fk = data.financeKpi;
+        const ils = t('currencyIls');
+        const fmt = (n: number) => formatIls(n).replace(/[^\d.,-]/g, '').trim();
+
+        if (fk.mode === 'range') {
+          const r = fk.range;
+          const vs = t('admin.fin.vsPrev');
+          const rangeLabel = `${r.from} → ${r.to} · ${r.days} ${t('admin.fin.rangeDays')}`;
+          return (
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                {rangeLabel}
+              </p>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <FinTile
+                  label={t('admin.fin.revenue')}
+                  value={fmt(r.revenue.value)}
+                  unit={ils}
+                  deltaPct={r.revenue.deltaPct}
+                  hint={vs}
+                  icon={FinIcons.dollar}
+                  iconBg="bg-violet-50 dark:bg-violet-950/40"
+                  iconFg="text-violet-600 dark:text-violet-300"
+                />
+                <FinTile
+                  label={t('admin.fin.expense')}
+                  value={fmt(r.expense.value)}
+                  unit={ils}
+                  deltaPct={r.expense.deltaPct}
+                  goodWhenDown
+                  hint={vs}
+                  icon={FinIcons.arrowDown}
+                  iconBg="bg-rose-50 dark:bg-rose-950/40"
+                  iconFg="text-rose-600 dark:text-rose-300"
+                />
+                <FinTile
+                  label={t('admin.fin.net')}
+                  value={fmt(r.net.value)}
+                  unit={ils}
+                  deltaPct={r.net.deltaPct}
+                  hint={vs}
+                  icon={FinIcons.doc}
+                  iconBg="bg-emerald-50 dark:bg-emerald-950/40"
+                  iconFg="text-emerald-600 dark:text-emerald-300"
+                />
+                <FinTile
+                  label={t('admin.fin.unpaidOrders')}
+                  value={String(fk.unpaidOrdersCount)}
+                  unit={t('admin.fin.unit.order')}
+                  deltaPct={null}
+                  icon={FinIcons.alert}
+                  iconBg="bg-amber-50 dark:bg-amber-950/40"
+                  iconFg="text-amber-600 dark:text-amber-300"
+                />
+              </div>
+            </div>
+          );
+        }
+
+        const vsDay = t('admin.fin.vsYesterday');
+        const vsMonth = t('admin.fin.vsLastMonth');
+        return (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <FinTile
+              label={t('admin.fin.revenueToday')}
+              value={fmt(fk.revenueToday.value)}
+              unit={ils}
+              deltaPct={fk.revenueToday.deltaPct}
+              hint={vsDay}
+              icon={FinIcons.dollar}
+              iconBg="bg-violet-50 dark:bg-violet-950/40"
+              iconFg="text-violet-600 dark:text-violet-300"
+            />
+            <FinTile
+              label={t('admin.fin.revenueMonth')}
+              value={fmt(fk.revenueMonth.value)}
+              unit={ils}
+              deltaPct={fk.revenueMonth.deltaPct}
+              hint={vsMonth}
+              icon={FinIcons.dollar}
+              iconBg="bg-violet-50 dark:bg-violet-950/40"
+              iconFg="text-violet-600 dark:text-violet-300"
+            />
+            <FinTile
+              label={t('admin.fin.expenseToday')}
+              value={fmt(fk.expenseToday.value)}
+              unit={ils}
+              deltaPct={fk.expenseToday.deltaPct}
+              goodWhenDown
+              hint={vsDay}
+              icon={FinIcons.arrowDown}
+              iconBg="bg-rose-50 dark:bg-rose-950/40"
+              iconFg="text-rose-600 dark:text-rose-300"
+            />
+            <FinTile
+              label={t('admin.fin.expenseMonth')}
+              value={fmt(fk.expenseMonth.value)}
+              unit={ils}
+              deltaPct={fk.expenseMonth.deltaPct}
+              goodWhenDown
+              hint={vsMonth}
+              icon={FinIcons.arrowDown}
+              iconBg="bg-rose-50 dark:bg-rose-950/40"
+              iconFg="text-rose-600 dark:text-rose-300"
+            />
+            <FinTile
+              label={t('admin.fin.netToday')}
+              value={fmt(fk.netToday.value)}
+              unit={ils}
+              deltaPct={fk.netToday.deltaPct}
+              hint={vsDay}
+              icon={FinIcons.doc}
+              iconBg="bg-emerald-50 dark:bg-emerald-950/40"
+              iconFg="text-emerald-600 dark:text-emerald-300"
+            />
+            <FinTile
+              label={t('admin.fin.netMonth')}
+              value={fmt(fk.netMonth.value)}
+              unit={ils}
+              deltaPct={fk.netMonth.deltaPct}
+              hint={vsMonth}
+              icon={FinIcons.doc}
+              iconBg="bg-emerald-50 dark:bg-emerald-950/40"
+              iconFg="text-emerald-600 dark:text-emerald-300"
+            />
+            <FinTile
+              label={t('admin.fin.unpaidOrders')}
+              value={String(fk.unpaidOrdersCount)}
+              unit={t('admin.fin.unit.order')}
+              deltaPct={null}
+              icon={FinIcons.alert}
+              iconBg="bg-amber-50 dark:bg-amber-950/40"
+              iconFg="text-amber-600 dark:text-amber-300"
+            />
+          </div>
+        );
+      })()}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">

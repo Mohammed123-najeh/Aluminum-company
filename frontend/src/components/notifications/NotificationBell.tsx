@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { ApiUserNotification } from '../../services/api';
 import type { NotificationsHookReturn } from '../../hooks/useNotifications';
 import { useApp } from '../../contexts/AppContext';
+import { emitFocusFlash } from '../../utils/focusFlash';
 
 function formatShortTime(iso: string): string {
   try {
@@ -22,6 +23,11 @@ type Props = {
   state: NotificationsHookReturn;
   onOpenMessagesWithPeer?: (peerUserId: string) => void;
   onOpenTasks?: (taskId?: string) => void;
+  /** Optional navigators for non-task/message types. The page wires these to
+   * whichever section owns each kind (HR queue, admin submissions, etc.). */
+  onOpenRequests?: () => void;
+  onOpenHrLeaves?: () => void;
+  onOpenAdminSubmissions?: () => void;
   onViewAll?: () => void;
 };
 
@@ -29,6 +35,9 @@ export const NotificationBell: React.FC<Props> = ({
   state,
   onOpenMessagesWithPeer,
   onOpenTasks,
+  onOpenRequests,
+  onOpenHrLeaves,
+  onOpenAdminSubmissions,
   onViewAll,
 }) => {
   const { t } = useApp();
@@ -54,13 +63,61 @@ export const NotificationBell: React.FC<Props> = ({
   const handleItem = async (n: ApiUserNotification) => {
     if (!n.readAt) await markRead(n.id);
     setOpen(false);
+
+    // Messages — navigate to thread and flash the most recent inbound message.
     if (n.type === 'message' && n.data.peerId && onOpenMessagesWithPeer) {
       onOpenMessagesWithPeer(n.data.peerId);
+      if (n.data.messageId) {
+        // Give the message thread a moment to render after navigation, then flash.
+        window.setTimeout(() => emitFocusFlash({ kind: 'message', id: String(n.data.messageId) }), 350);
+      }
       return;
     }
-    if ((n.type === 'task_assigned' || n.type === 'task_status') && onOpenTasks) {
+
+    // Tasks — navigate to the tasks section, focus the task in the detail panel,
+    // and flash the corresponding row in the list. EmployeeTasks already uses
+    // `focusTaskId` to open the side panel; the flash adds a brief highlight.
+    if (
+      (n.type === 'task_assigned' || n.type === 'task_status' || n.type === 'task_cancelled')
+      && onOpenTasks
+    ) {
       const tid = n.data.taskId;
       onOpenTasks(tid);
+      if (tid) {
+        window.setTimeout(() => emitFocusFlash({ kind: 'task', id: String(tid) }), 350);
+      }
+      return;
+    }
+
+    // Leave requests — supervisor gets the supervisor queue, HR gets the HR
+    // queue. We don't know the viewer's role here, so prefer HR if wired,
+    // otherwise fall back to the requests pane.
+    if ((n.type === 'hr_leave_pending' || n.type === 'hr_leave_decided') && n.data.leaveRequestId) {
+      if (onOpenHrLeaves) onOpenHrLeaves();
+      else if (onOpenRequests) onOpenRequests();
+      window.setTimeout(() => emitFocusFlash({ kind: 'leave-request', id: String(n.data.leaveRequestId) }), 350);
+      return;
+    }
+
+    // Salary requests
+    if ((n.type === 'admin_salary_pending' || n.type === 'hr_salary_pending' || n.type === 'hr_salary_decided') && n.data.salaryRequestId) {
+      if (onOpenRequests) onOpenRequests();
+      window.setTimeout(() => emitFocusFlash({ kind: 'salary-request', id: String(n.data.salaryRequestId) }), 350);
+      return;
+    }
+
+    // Debit (salary advance) requests
+    if ((n.type === 'hr_debit_pending' || n.type === 'hr_debit_decided') && n.data.debitRequestId) {
+      if (onOpenRequests) onOpenRequests();
+      window.setTimeout(() => emitFocusFlash({ kind: 'debit-request', id: String(n.data.debitRequestId) }), 350);
+      return;
+    }
+
+    // Admin submissions
+    if ((n.type === 'admin_submission_pending' || n.type === 'admin_submission_decided') && n.data.submissionId) {
+      if (onOpenAdminSubmissions) onOpenAdminSubmissions();
+      else if (onOpenRequests) onOpenRequests();
+      window.setTimeout(() => emitFocusFlash({ kind: 'submission', id: String(n.data.submissionId) }), 350);
       return;
     }
   };

@@ -3,11 +3,13 @@ import type { ApiAdminAnalytics } from '../services/api';
 import { adminAnalyticsApi } from '../services/api';
 import { useApp } from '../contexts/AppContext';
 
-export function useAdminAnalytics() {
+export function useAdminAnalytics(range?: { from: string; to: string } | null) {
   const { token } = useApp();
   const [data, setData] = useState<ApiAdminAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const rangeKey = range ? `${range.from}|${range.to}` : '';
 
   const refresh = useCallback(async () => {
     if (!token) {
@@ -18,7 +20,7 @@ export function useAdminAnalytics() {
     setLoading(true);
     setError(null);
     try {
-      const d = await adminAnalyticsApi.get(token);
+      const d = await adminAnalyticsApi.get(token, range ?? undefined);
       setData(d);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load analytics');
@@ -26,7 +28,7 @@ export function useAdminAnalytics() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, rangeKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     refresh();

@@ -5,6 +5,7 @@ import { useStorehouse } from '../../hooks/useStorehouse';
 import type { ApiTask, ApiUser, TaskStatus } from '../../services/api';
 import { taskDueBucket } from '../../utils/taskDates';
 import { stripCustomOrderFence } from '../../utils/taskDescription';
+import { onFocusFlash, flashElement } from '../../utils/focusFlash';
 import { CreateOrderModal } from './CreateOrderModal';
 import { EmployeeTaskDetailPanel } from './EmployeeTaskDetailPanel';
 import { SalesTaskFulfillmentModal } from './SalesTaskFulfillmentModal';
@@ -65,6 +66,17 @@ export const EmployeeTasks: React.FC<Props> = ({
     setDetailTaskId(focusTaskId);
     onFocusTaskConsumed?.();
   }, [focusTaskId, onFocusTaskConsumed]);
+
+  // Notification deep-link: scroll the task row into view and apply a 2s flash.
+  useEffect(() => {
+    return onFocusFlash('task', (taskId) => {
+      // Defer so the row is mounted (especially right after navigation).
+      window.requestAnimationFrame(() => {
+        const node = document.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(taskId)}"]`);
+        flashElement(node);
+      });
+    });
+  }, []);
 
   const linkedTaskTitle = useMemo(
     () => (orderTaskId ? tasks.find((x) => x.id === orderTaskId)?.title ?? null : null),
@@ -193,6 +205,7 @@ export const EmployeeTasks: React.FC<Props> = ({
               <button
                 key={task.id}
                 type="button"
+                data-task-id={task.id}
                 onClick={() => setDetailTaskId(task.id)}
                 className="w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-indigo-200 hover:bg-slate-50/80 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-indigo-900 dark:hover:bg-slate-800/80"
               >
