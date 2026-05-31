@@ -1,9 +1,9 @@
 import React, { useState, useEffect, startTransition } from 'react';
 import { useUsers } from '../hooks/useUsers';
 import { useApp } from '../contexts/AppContext';
-import { StatsCards } from '../components/admin/StatsCards';
 import { UserTable } from '../components/admin/UserTable';
 import { OrgChart } from '../components/admin/OrgChart';
+import { StatsCards } from '../components/admin/StatsCards';
 import { UserModal } from '../components/admin/UserModal';
 import { SettingsModal } from '../components/admin/SettingsModal';
 import { SectionPanel } from '../components/SectionPanel';
@@ -13,6 +13,7 @@ import { AdminAnalytics } from '../components/admin/AdminAnalytics';
 import { AdminFinancialAnalytics } from '../components/admin/AdminFinancialAnalytics';
 import { AdminPayrollPanel } from '../components/admin/AdminPayrollPanel';
 import { NotificationBell } from '../components/notifications/NotificationBell';
+import { WorkClockBadge } from '../components/shared/WorkClockBadge';
 import { NotificationsPanel } from '../components/notifications/NotificationsPanel';
 import { useNotifications } from '../hooks/useNotifications';
 import { useMessages } from '../hooks/useMessages';
@@ -305,6 +306,7 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
           </div>
 
           <div className="flex items-center gap-2">
+            <WorkClockBadge />
             <NotificationBell
               state={notif}
               onViewAll={() => goView('notifications')}
@@ -467,7 +469,7 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
             </div>
           ) : (
             <>
-              {(view === 'users' || view === 'orgchart') && <StatsCards users={users} />}
+              {view === 'orgchart' && <StatsCards users={users} />}
               <SectionPanel active={view === 'users'}>
                 <UserTable users={users} onEdit={setEditUser} onToggleStatus={toggleStatus} onDelete={deleteUser} />
               </SectionPanel>

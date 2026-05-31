@@ -3,10 +3,12 @@ import ReactDOM from 'react-dom/client';
 import './style.css';
 import { AppProvider, useApp } from './contexts/AppContext';
 import { LoginPage } from './LoginPage';
+import { ResetPasswordPage } from './ResetPasswordPage';
 import { AdminPage } from './pages/AdminPage';
 import { SupervisorPage } from './pages/SupervisorPage';
 import { EmployeePage } from './pages/EmployeePage';
 import { auth } from './services/api';
+import { navigate } from './utils/navigation';
 
 function readAiShareParam(): string | null {
   try {
@@ -16,11 +18,30 @@ function readAiShareParam(): string | null {
   }
 }
 
+/** Subscribes to pushstate/popstate so the password-reset deep-link works
+ *  without a full router dependency. Browsers don't fire `popstate` on
+ *  pushState — only on back/forward — so we also listen on a custom event
+ *  fired by our `navigate()` helper in utils/navigation.ts. */
+function useUrlPath(): string {
+  const [path, setPath] = useState<string>(() => window.location.pathname);
+  useEffect(() => {
+    const handler = () => setPath(window.location.pathname);
+    window.addEventListener('popstate', handler);
+    window.addEventListener('app:navigate', handler);
+    return () => {
+      window.removeEventListener('popstate', handler);
+      window.removeEventListener('app:navigate', handler);
+    };
+  }, []);
+  return path;
+}
+
 const App: React.FC = () => {
   const { token, setToken, setAdminProfile, setCurrentUser, currentUser } = useApp();
   const [loggedIn, setLoggedIn] = useState(false);
   const [checking, setChecking] = useState(true);
   const [pendingShareToken, setPendingShareToken] = useState<string | null>(() => readAiShareParam());
+  const path = useUrlPath();
 
   const clearAiShareParam = useCallback(() => {
     setPendingShareToken(null);
@@ -83,6 +104,12 @@ const App: React.FC = () => {
         <span className="h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-indigo-500" />
       </div>
     );
+  }
+
+  // Public /reset-password route. Available to any visitor (logged in or not)
+  // since password recovery may be initiated from an authenticated session too.
+  if (path === '/reset-password') {
+    return <ResetPasswordPage onBackToLogin={() => navigate('/')} />;
   }
 
   if (!loggedIn) {

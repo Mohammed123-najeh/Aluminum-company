@@ -19,6 +19,7 @@ import { SettingsModal } from '../components/admin/SettingsModal';
 import { SectionPanel } from '../components/SectionPanel';
 import { AiAssistantPanel } from '../components/ai/AiAssistantPanel';
 import { NotificationBell } from '../components/notifications/NotificationBell';
+import { WorkClockBadge } from '../components/shared/WorkClockBadge';
 import { NotificationsPanel } from '../components/notifications/NotificationsPanel';
 import { useNotifications } from '../hooks/useNotifications';
 
@@ -283,6 +284,7 @@ export const SupervisorPage: React.FC<Props> = ({ onLogout, initialAiShareToken,
             {section === 'settings' && t('settings')}
           </h1>
           <div className="flex items-center gap-2">
+            <WorkClockBadge />
             <NotificationBell
               state={notif}
               onOpenMessagesWithPeer={(peerId) => {

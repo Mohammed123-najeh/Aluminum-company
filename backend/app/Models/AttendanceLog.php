@@ -18,6 +18,7 @@ class AttendanceLog extends Model
         'user_id',
         'clock_in_at',
         'clock_out_at',
+        'last_heartbeat_at',
         'minutes_worked',
         'ip_address',
         'user_agent',
@@ -36,6 +37,7 @@ class AttendanceLog extends Model
         return [
             'clock_in_at' => 'datetime',
             'clock_out_at' => 'datetime',
+            'last_heartbeat_at' => 'datetime',
             'minutes_worked' => 'integer',
             'late_minutes' => 'integer',
             'justified' => 'boolean',

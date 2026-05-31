@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../contexts/AppContext';
 import { auth } from '../services/api';
-import { ForgotPasswordModal } from './ForgotPasswordModal';
+import { navigate } from '../utils/navigation';
 
 type Props = {
   onSuccess?: () => void;
@@ -16,7 +16,8 @@ export const LoginForm: React.FC<Props> = ({ onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [showForgot, setShowForgot] = useState(false);
+
+  const goToReset = () => navigate('/reset-password');
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -117,7 +118,7 @@ export const LoginForm: React.FC<Props> = ({ onSuccess }) => {
         </label>
         <button
           type="button"
-          onClick={() => setShowForgot(true)}
+          onClick={goToReset}
           className="font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
         >
           {t('forgotPassword')}
@@ -157,13 +158,6 @@ export const LoginForm: React.FC<Props> = ({ onSuccess }) => {
         {t('systemVersion')}
       </p>
 
-      {showForgot && (
-        <ForgotPasswordModal
-          initialEmail={identifier}
-          onClose={() => setShowForgot(false)}
-          onResetComplete={(email) => setIdentifier(email)}
-        />
-      )}
     </form>
   );
 };

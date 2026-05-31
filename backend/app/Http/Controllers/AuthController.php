@@ -29,27 +29,10 @@ class AuthController extends Controller
         // Revoke all existing tokens for this user
         $user->tokens()->delete();
 
-        // Close any open attendance shift (e.g. previous session that never logged out)
-        AttendanceLog::where('user_id', $user->id)
-            ->whereNull('clock_out_at')
-            ->get()
-            ->each(function (AttendanceLog $log) {
-                $log->clock_out_at = now();
-                $log->minutes_worked = max(0, (int) $log->clock_in_at->diffInMinutes(now()));
-                $log->save();
-            });
-
-        // Record login time
+        // Record login time (attendance sessions are now driven by activity
+        // heartbeats, not login/logout — so we no longer open or close shifts here).
         $user->last_login_at = now();
         $user->save();
-
-        // Open a new attendance shift
-        AttendanceLog::create([
-            'user_id' => $user->id,
-            'clock_in_at' => now(),
-            'ip_address' => $request->ip(),
-            'user_agent' => substr((string) $request->userAgent(), 0, 255),
-        ]);
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
@@ -63,14 +46,18 @@ class AuthController extends Controller
     {
         $user = $request->user();
 
-        // Close the open attendance shift (if any)
+        // Close any open attendance session at its last heartbeat (not "now") so
+        // we don't count idle/post-activity time. The heartbeat stitcher would
+        // eventually close this anyway, but doing it here keeps reports clean
+        // when the user explicitly signs out.
         $open = AttendanceLog::where('user_id', $user->id)
             ->whereNull('clock_out_at')
             ->orderByDesc('clock_in_at')
             ->first();
         if ($open) {
-            $open->clock_out_at = now();
-            $open->minutes_worked = max(0, (int) $open->clock_in_at->diffInMinutes(now()));
+            $closeAt = $open->last_heartbeat_at ?? $open->clock_in_at;
+            $open->clock_out_at = $closeAt;
+            $open->minutes_worked = max(0, (int) $open->clock_in_at->diffInMinutes($closeAt));
             $open->save();
         }
 

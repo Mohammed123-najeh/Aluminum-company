@@ -12,6 +12,7 @@ use App\Http\Controllers\TaskController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\AdminAnalyticsController;
 use App\Http\Controllers\AttendanceController;
+use App\Http\Controllers\AttendanceHeartbeatController;
 use App\Http\Controllers\HrAnalyticsController;
 use App\Http\Controllers\LeaveRequestController;
 use App\Http\Controllers\ReceiptPaymentAnalyticsController;
@@ -83,6 +84,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/attendance', [AttendanceController::class, 'index']);
     Route::get('/attendance/summary', [AttendanceController::class, 'summary']);
+    Route::post('/attendance/heartbeat', [AttendanceHeartbeatController::class, 'ping']);
+    Route::get('/attendance/today', [AttendanceHeartbeatController::class, 'today']);
 
     Route::get('/admin/analytics', [AdminAnalyticsController::class, 'index']);
     Route::get('/receipt-payment-analytics', [ReceiptPaymentAnalyticsController::class, 'index']);
