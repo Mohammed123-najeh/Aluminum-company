@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import type { User } from '../../types/user';
-import type { ApiMessage, ApiTask } from '../../services/api';
-import { usersApi } from '../../services/api';
+import type { ApiMessage, ApiTask, ApiMessageContact } from '../../services/api';
+import { usersApi, messagesApi } from '../../services/api';
 import type { MessageThreadSummary } from '../../hooks/useMessages';
+import { onFocusFlash, flashElement } from '../../utils/focusFlash';
 
 type Props = {
   employees: User[];
@@ -38,6 +39,7 @@ export const SupervisorMessages: React.FC<Props> = ({
   const [sending, setSending] = useState(false);
   const [primaryAdmin, setPrimaryAdmin] = useState<User | null>(null);
   const [broadcastMode, setBroadcastMode] = useState(false);
+  const [contactsApi, setContactsApi] = useState<ApiMessageContact[]>([]);
 
   useEffect(() => {
     if (!token) return;
@@ -45,18 +47,41 @@ export const SupervisorMessages: React.FC<Props> = ({
       .list(token)
       .then((rows) => setPrimaryAdmin((rows.find((u) => u.role === 'admin' && u.status === 'active') as User | undefined) ?? null))
       .catch(() => setPrimaryAdmin(null));
+    messagesApi
+      .contacts(token)
+      .then((rows) => setContactsApi(rows))
+      .catch(() => setContactsApi([]));
   }, [token]);
+
+  // Recipient roster shown in the left pane: HR + Finance + own team (delivered by
+  // /messages/contacts). Falls back to the supervisor's `employees` prop until the
+  // contacts request completes, so the UI is never empty during load.
+  const recipientRoster = useMemo<User[]>(() => {
+    if (contactsApi.length === 0) return employees;
+    return contactsApi
+      .filter((c) => c.relation !== 'admin') // primaryAdmin is rendered separately above
+      .map<User>((c) => ({
+        id: c.id,
+        name: c.name,
+        email: '',
+        role: c.role,
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        employeeType: (c.employeeType as User['employeeType']) ?? undefined,
+        mainJob: c.mainJob ?? undefined,
+      }));
+  }, [contactsApi, employees]);
 
   const summaryFor = (peerId: string) => threadSummaries.find((x) => x.peerId === peerId || ('receiverId' in x && x.receiverId === peerId));
 
   const sortedEmployees = useMemo(() => {
-    return [...employees].sort((a, b) => {
+    return [...recipientRoster].sort((a, b) => {
       const atA = summaryFor(a.id)?.lastAt ?? '';
       const atB = summaryFor(b.id)?.lastAt ?? '';
       if (atA || atB) return atB.localeCompare(atA);
       return a.name.localeCompare(b.name);
     });
-  }, [employees, threadSummaries]);
+  }, [recipientRoster, threadSummaries]);
 
   const employeeTasks = useMemo(
     () =>
@@ -66,7 +91,11 @@ export const SupervisorMessages: React.FC<Props> = ({
     [tasks, selectedReceiverId, broadcastMode],
   );
 
-  const selectedEmployee = selectedReceiverId ? employees.find((e) => e.id === selectedReceiverId) : null;
+  const selectedEmployee = selectedReceiverId
+    ? (employees.find((e) => e.id === selectedReceiverId)
+        ?? recipientRoster.find((e) => e.id === selectedReceiverId)
+        ?? null)
+    : null;
   const selectedAdmin = selectedReceiverId && primaryAdmin?.id === selectedReceiverId ? primaryAdmin : null;
 
   const previewFor = (empId: string) => {
@@ -88,6 +117,15 @@ export const SupervisorMessages: React.FC<Props> = ({
     setReplyTaskId('');
     setBody('');
   }, [selectedReceiverId, broadcastMode]);
+
+  useEffect(() => {
+    return onFocusFlash('message', (messageId) => {
+      window.requestAnimationFrame(() => {
+        const node = document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`);
+        flashElement(node);
+      });
+    });
+  }, []);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -231,6 +269,7 @@ export const SupervisorMessages: React.FC<Props> = ({
                 thread.map((m) => (
                   <div
                     key={m.id}
+                    data-message-id={m.id}
                     className={`flex ${m.senderId === selectedReceiverId ? 'justify-start' : 'justify-end'}`}
                   >
                     <div

@@ -108,7 +108,11 @@ export const EmployeeSalesReceipts: React.FC<Props> = ({ showInnerHeading = true
   const [dueFilter, setDueFilter] = useState<string>('');
   const [groupByCustomer, setGroupByCustomer] = useState(false);
 
-  const canEditPayment = currentUser?.role === 'supervisor' || currentUser?.role === 'admin';
+  // Subsequent partial payments are recorded by Finance (accountant employees) or admins.
+  // Supervisors set the initial total + paid amount at task creation only.
+  const canEditPayment =
+    currentUser?.role === 'admin'
+    || (currentUser?.role === 'employee' && currentUser?.employeeType === 'accountant');
 
   useEffect(() => {
     if (isActive) void refetch();

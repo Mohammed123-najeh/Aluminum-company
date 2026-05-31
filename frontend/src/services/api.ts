@@ -253,7 +253,7 @@ export type ApiMessageContact = {
   role: 'admin' | 'supervisor' | 'employee';
   employeeType: string | null;
   mainJob: string | null;
-  relation: 'admin' | 'supervisor' | 'teammate' | 'team' | 'hr' | 'staff';
+  relation: 'admin' | 'supervisor' | 'teammate' | 'team' | 'hr' | 'finance' | 'staff';
 };
 
 export const messagesApi = {
@@ -421,6 +421,29 @@ export type ApiAdminAnalytics = {
     conversations: number;
     aiMessages: number;
   };
+  financeKpi:
+    | {
+        mode: 'fixed';
+        revenueToday: { value: number; prev: number; deltaPct: number | null };
+        revenueMonth: { value: number; prev: number; deltaPct: number | null };
+        expenseToday: { value: number; prev: number; deltaPct: number | null };
+        expenseMonth: { value: number; prev: number; deltaPct: number | null };
+        netToday: { value: number; prev: number; deltaPct: number | null };
+        netMonth: { value: number; prev: number; deltaPct: number | null };
+        unpaidOrdersCount: number;
+      }
+    | {
+        mode: 'range';
+        range: {
+          from: string;
+          to: string;
+          days: number;
+          revenue: { value: number; prev: number; deltaPct: number | null };
+          expense: { value: number; prev: number; deltaPct: number | null };
+          net: { value: number; prev: number; deltaPct: number | null };
+        };
+        unpaidOrdersCount: number;
+      };
   financial?: {
     receiptsAnalyzedAt: string;
     completedReceiptsCount: number;
@@ -440,7 +463,10 @@ export type ApiAdminAnalytics = {
 };
 
 export const adminAnalyticsApi = {
-  get: (token: string) => request<ApiAdminAnalytics>('GET', '/admin/analytics', undefined, token),
+  get: (token: string, range?: { from: string; to: string }) => {
+    const q = range ? `?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}` : '';
+    return request<ApiAdminAnalytics>('GET', `/admin/analytics${q}`, undefined, token);
+  },
 };
 
 export type ApiReceiptPaymentAnalytics = {
@@ -1456,6 +1482,24 @@ export type ApiPayrollSummary = {
   rows: ApiPayrollRow[];
 };
 
+export type ApiAttendanceHeartbeat = {
+  sessionId: string;
+  sessionStartedAt: string;
+  minutesInSession: number;
+  continued: boolean;
+};
+
+export type ApiAttendanceToday = {
+  date: string;
+  minutesWorked: number;
+  openSession: {
+    id: string;
+    startedAt: string;
+    lastHeartbeatAt: string | null;
+    minutesInSession: number;
+  } | null;
+};
+
 export const attendanceApi = {
   list: (token: string, opts?: { userId?: string; from?: string; to?: string }) => {
     const qs = new URLSearchParams();
@@ -1472,6 +1516,10 @@ export const attendanceApi = {
     const suffix = qs.toString() ? `?${qs.toString()}` : '';
     return request<ApiPayrollSummary>('GET', `/attendance/summary${suffix}`, undefined, token);
   },
+  heartbeat: (token: string) =>
+    request<ApiAttendanceHeartbeat>('POST', '/attendance/heartbeat', {}, token),
+  today: (token: string) =>
+    request<ApiAttendanceToday>('GET', '/attendance/today', undefined, token),
 };
 
 // ── Finance Center ───────────────────────────────────────────────────────────

@@ -22,19 +22,26 @@ class MessageController extends Controller
                 $subordinateIds = $user->subordinates()->pluck('id')->toArray();
                 $primaryAdmin = $this->primaryAdmin();
                 $isPrimaryAdmin = $primaryAdmin && (int) $primaryAdmin->id === $otherId;
-                if (! in_array($otherId, $subordinateIds) && ! $isPrimaryAdmin) {
-                    return response()->json(['message' => 'You can only view threads with your employees or the primary admin'], 403);
+                $other = User::find($otherId);
+                $isStaffContact = $other && $other->role === 'employee'
+                    && in_array($other->employee_type, ['hr', 'accountant'], true);
+                if (! in_array($otherId, $subordinateIds) && ! $isPrimaryAdmin && ! $isStaffContact) {
+                    return response()->json(['message' => 'You can only view threads with your team, HR, Finance, or the primary admin'], 403);
                 }
             }
             if ($user->role === 'employee') {
                 $other = User::find($otherId);
+                $isStaff = in_array($user->employee_type, ['hr', 'accountant'], true);
                 $allowed = $other && (
                     (int) $other->id === (int) $user->supervisor_id
                     || ($other->role === 'employee' && $other->employee_type === 'hr')
+                    || ($other->role === 'employee' && $other->employee_type === 'accountant')
                     || ($other->role === 'employee' && $other->id !== $user->id && (int) $other->supervisor_id === (int) $user->supervisor_id && $user->supervisor_id !== null)
+                    // HR / Finance employees can view threads with any supervisor
+                    || ($isStaff && $other->role === 'supervisor')
                 );
                 if (! $allowed) {
-                    return response()->json(['message' => 'You can only message your supervisor, HR, or your teammates'], 403);
+                    return response()->json(['message' => 'You can only message your supervisor, HR, Finance, or your teammates'], 403);
                 }
             }
             if ($user->role === 'admin') {
@@ -148,12 +155,24 @@ class MessageController extends Controller
         }
         if ($user->role === 'supervisor') {
             $primaryAdmin = $this->primaryAdmin();
+            // Supervisor can message: their own team + the primary admin + any HR
+            // employee + any accountant (Finance) employee.
             return (int) $receiver->supervisor_id === (int) $user->id
-                || ($primaryAdmin && (int) $receiver->id === (int) $primaryAdmin->id);
+                || ($primaryAdmin && (int) $receiver->id === (int) $primaryAdmin->id)
+                || ($receiver->role === 'employee' && $receiver->employee_type === 'hr')
+                || ($receiver->role === 'employee' && $receiver->employee_type === 'accountant');
         }
         if ($user->role === 'employee') {
+            // HR and Finance employees can message ANY supervisor (cross-team
+            // contact is part of their job). Plain workshop employees stay
+            // restricted to their own supervisor.
+            $isStaff = in_array($user->employee_type, ['hr', 'accountant'], true);
+            if ($isStaff && $receiver->role === 'supervisor') {
+                return true;
+            }
             return (int) $receiver->id === (int) $user->supervisor_id
                 || ($receiver->role === 'employee' && $receiver->employee_type === 'hr')
+                || ($receiver->role === 'employee' && $receiver->employee_type === 'accountant')
                 || ($receiver->role === 'employee'
                     && (int) $receiver->id !== (int) $user->id
                     && $user->supervisor_id !== null
@@ -187,6 +206,13 @@ class MessageController extends Controller
             ->where('id', '!=', $user->id)
             ->orderBy('name')->get();
 
+        $finance = User::query()
+            ->where('role', 'employee')
+            ->where('employee_type', 'accountant')
+            ->where('status', 'active')
+            ->where('id', '!=', $user->id)
+            ->orderBy('name')->get();
+
         $contacts = [];
 
         if ($user->role === 'admin') {
@@ -196,9 +222,19 @@ class MessageController extends Controller
             $admin = $this->primaryAdmin();
             if ($admin) $contacts[] = $this->contactRow($admin, 'admin');
             foreach ($hr as $u) $contacts[] = $this->contactRow($u, 'hr');
-            $team = $user->subordinates()->where('status', 'active')->orderBy('name')->get();
+            foreach ($finance as $u) $contacts[] = $this->contactRow($u, 'finance');
+            // Supervisor's own operational team (exclude cross-functional HR/Finance/Sales
+            // employees that happen to be assigned to him for org-chart purposes).
+            $team = $user->subordinates()
+                ->where('status', 'active')
+                ->where(function ($q) {
+                    $q->whereNull('employee_type')
+                      ->orWhereNotIn('employee_type', ['hr', 'accountant', 'sales']);
+                })
+                ->orderBy('name')->get();
             foreach ($team as $u) $contacts[] = $this->contactRow($u, 'team');
         } else { // employee
+            $isStaff = in_array($user->employee_type, ['hr', 'accountant'], true);
             if ($user->supervisor_id) {
                 $sup = User::find($user->supervisor_id);
                 if ($sup && $sup->status === 'active') $contacts[] = $this->contactRow($sup, 'supervisor');
@@ -210,9 +246,26 @@ class MessageController extends Controller
                     ->orderBy('name')->get();
                 foreach ($teammates as $u) $contacts[] = $this->contactRow($u, 'teammate');
             }
+            // HR/Finance employees can reach every supervisor, not just their own.
+            if ($isStaff) {
+                $allSupervisors = User::query()
+                    ->where('role', 'supervisor')
+                    ->where('status', 'active')
+                    ->orderBy('name')->get();
+                foreach ($allSupervisors as $sup) {
+                    if (! collect($contacts)->pluck('id')->contains((string) $sup->id)) {
+                        $contacts[] = $this->contactRow($sup, 'supervisor');
+                    }
+                }
+            }
             foreach ($hr as $u) {
                 if (! collect($contacts)->pluck('id')->contains((string) $u->id)) {
                     $contacts[] = $this->contactRow($u, 'hr');
+                }
+            }
+            foreach ($finance as $u) {
+                if (! collect($contacts)->pluck('id')->contains((string) $u->id)) {
+                    $contacts[] = $this->contactRow($u, 'finance');
                 }
             }
         }

@@ -219,10 +219,10 @@ class OrderController extends Controller
     public function updatePayment(Request $request, Order $order)
     {
         $user = $request->user();
-        $can = $order->creator_id == $user->id
-            || ($user->role === 'supervisor' && (int) $order->supervisor_id === (int) $user->id)
-            || $user->role === 'admin'
-            || $user->isAccountant();
+        // Subsequent partial payments on completed orders are recorded by Finance
+        // (accountants) and admins only. Supervisors set the initial total + paid
+        // amount at task creation; later top-ups go through Finance.
+        $can = $user->role === 'admin' || $user->isAccountant();
         if (! $can) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
@@ -284,10 +284,10 @@ class OrderController extends Controller
     public function addPayment(Request $request, Order $order)
     {
         $user = $request->user();
-        $can = $order->creator_id == $user->id
-            || ($user->role === 'supervisor' && (int) $order->supervisor_id === (int) $user->id)
-            || $user->role === 'admin'
-            || $user->isAccountant();
+        // Subsequent partial payments on completed orders are recorded by Finance
+        // (accountants) and admins only. Supervisors set the initial total + paid
+        // amount at task creation; later top-ups go through Finance.
+        $can = $user->role === 'admin' || $user->isAccountant();
         if (! $can) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
@@ -331,10 +331,10 @@ class OrderController extends Controller
     public function updateReceiptMeta(Request $request, Order $order)
     {
         $user = $request->user();
-        $can = $order->creator_id == $user->id
-            || ($user->role === 'supervisor' && (int) $order->supervisor_id === (int) $user->id)
-            || $user->role === 'admin'
-            || $user->isAccountant();
+        // Subsequent partial payments on completed orders are recorded by Finance
+        // (accountants) and admins only. Supervisors set the initial total + paid
+        // amount at task creation; later top-ups go through Finance.
+        $can = $user->role === 'admin' || $user->isAccountant();
         if (! $can) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
