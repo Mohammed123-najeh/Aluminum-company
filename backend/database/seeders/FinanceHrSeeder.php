@@ -12,19 +12,7 @@ class FinanceHrSeeder extends Seeder
 {
     public function run(): void
     {
-        // Default expense categories
-        $cats = [
-            ['name_ar' => 'مواد خام',          'name_en' => 'Raw materials'],
-            ['name_ar' => 'رواتب',             'name_en' => 'Salaries'],
-            ['name_ar' => 'إيجارات',           'name_en' => 'Rent'],
-            ['name_ar' => 'كهرباء ومياه',      'name_en' => 'Utilities'],
-            ['name_ar' => 'صيانة',             'name_en' => 'Maintenance'],
-            ['name_ar' => 'نقل',               'name_en' => 'Transport'],
-            ['name_ar' => 'تسويق',             'name_en' => 'Marketing'],
-            ['name_ar' => 'مستلزمات مكتبية',  'name_en' => 'Office supplies'],
-            ['name_ar' => 'أخرى',              'name_en' => 'Other'],
-        ];
-        foreach ($cats as $i => $c) {
+        foreach (ExpenseCategory::defaultCategories() as $i => $c) {
             ExpenseCategory::firstOrCreate(['name_en' => $c['name_en']], array_merge($c, ['ordering' => $i]));
         }
 

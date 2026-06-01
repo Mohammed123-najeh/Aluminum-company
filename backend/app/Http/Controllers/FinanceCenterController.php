@@ -224,7 +224,14 @@ class FinanceCenterController extends Controller
     public function listExpenseCategories(Request $request)
     {
         if ($r = $this->gate($request)) return $r;
-        return response()->json(ExpenseCategory::orderBy('ordering')->get()->map->toApiArray());
+        ExpenseCategory::ensureDefaults();
+        // Hide archived categories from the picker — they remain in the table
+        // so historical expense rows can still resolve their category name.
+        $q = ExpenseCategory::query()->where('archived', false);
+        if ($request->boolean('include_archived')) {
+            $q = ExpenseCategory::query();
+        }
+        return response()->json($q->orderBy('ordering')->get()->map->toApiArray());
     }
 
     public function storeExpenseCategory(Request $request)
