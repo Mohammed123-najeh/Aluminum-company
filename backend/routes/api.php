@@ -23,6 +23,7 @@ use App\Http\Controllers\AdminSubmissionController;
 use App\Http\Controllers\AdminApprovalsController;
 use App\Http\Controllers\EmployeeDebitRequestController;
 use App\Http\Controllers\FinanceCenterController;
+use App\Http\Controllers\FinanceReportsController;
 use App\Http\Controllers\HrCenterController;
 use Illuminate\Support\Facades\Route;
 
@@ -49,6 +50,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/tasks/{task}/attachments', [TaskController::class, 'storeAttachment']);
     Route::delete('/tasks/{task}/attachments/{attachment}', [TaskController::class, 'destroyAttachment']);
     Route::patch('/tasks/{task}', [TaskController::class, 'update']);
+    Route::post('/tasks/{task}/cancel', [TaskController::class, 'cancel']);
     Route::delete('/tasks/{task}', [TaskController::class, 'destroy']);
 
     Route::get('/storehouse/categories', [StorehouseController::class, 'categories']);
@@ -191,6 +193,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/finance/reports/pnl', [FinanceCenterController::class, 'reportPnl']);
     Route::get('/finance/reports/expense-breakdown', [FinanceCenterController::class, 'reportExpenseBreakdown']);
+    Route::get('/finance/reports/download/{kind}', [FinanceReportsController::class, 'download']);
 
     Route::get('/finance/settings/work-schedule', [FinanceCenterController::class, 'workScheduleSettings']);
     Route::patch('/finance/settings/work-schedule', [FinanceCenterController::class, 'updateWorkScheduleSettings']);

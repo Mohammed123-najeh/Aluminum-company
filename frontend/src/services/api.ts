@@ -309,6 +309,8 @@ export type ApiTask = {
   status: TaskStatus;
   /** Set when status becomes completed (ISO). */
   completedAt?: string | null;
+  cancelledAt?: string | null;
+  cancellationReason?: string | null;
   dueDate: string | null;
   orderReference: string | null;
   /** End customer / client name (set by supervisor when creating the task). */
@@ -513,6 +515,13 @@ export const tasksApi = {
     return request<ApiTask>('PATCH', `/tasks/${id}`, body, token);
   },
   delete: (id: string, token: string) => request<null>('DELETE', `/tasks/${id}`, undefined, token),
+  cancel: (id: string, reason: string | null, token: string) =>
+    request<{ task: ApiTask; refundedAmount: number }>(
+      'POST',
+      `/tasks/${id}/cancel`,
+      reason ? { reason } : {},
+      token,
+    ),
   uploadAttachment: async (taskId: string, file: File, token: string | null): Promise<ApiTask> => {
     if (!token) throw new Error('Not authenticated');
     const form = new FormData();

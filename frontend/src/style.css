@@ -53,20 +53,31 @@ body {
   }
 }
 
-/* Notification deep-link highlight: applied by focusFlash for ~2s after the
- * user clicks a notification, so the target row stands out as it scrolls in. */
+/* Notification deep-link highlight: applied for ~3s after the user clicks a
+ * notification, so the target row visibly stands out as it scrolls into view.
+ * Uses a stronger amber-yellow pulse — meant to be noticed at a glance,
+ * not blend in. */
 @keyframes flash-target-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.45); background-color: rgba(199, 210, 254, 0.55); }
-  60% { box-shadow: 0 0 0 6px rgba(99, 102, 241, 0); background-color: rgba(199, 210, 254, 0.25); }
-  100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); background-color: transparent; }
+  0%   { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.85); background-color: rgba(254, 243, 199, 0.85); }
+  40%  { box-shadow: 0 0 0 10px rgba(251, 191, 36, 0); background-color: rgba(254, 243, 199, 0.55); }
+  100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); background-color: transparent; }
 }
 .flash-target {
-  animation: flash-target-pulse 2s ease-out 1;
+  animation: flash-target-pulse 3s ease-out 1;
   border-radius: 0.75rem;
-  outline: 2px solid rgba(99, 102, 241, 0.55);
-  outline-offset: 2px;
-  transition: outline-color 1.5s ease-out;
+  outline: 3px solid rgba(245, 158, 11, 0.9);
+  outline-offset: 3px;
+  position: relative;
+  z-index: 10;
 }
 .dark .flash-target {
-  outline-color: rgba(165, 180, 252, 0.5);
+  outline-color: rgba(252, 211, 77, 0.9);
+}
+.dark .flash-target {
+  animation-name: flash-target-pulse-dark;
+}
+@keyframes flash-target-pulse-dark {
+  0%   { box-shadow: 0 0 0 0 rgba(252, 211, 77, 0.7); background-color: rgba(120, 53, 15, 0.55); }
+  40%  { box-shadow: 0 0 0 10px rgba(252, 211, 77, 0); background-color: rgba(120, 53, 15, 0.25); }
+  100% { box-shadow: 0 0 0 0 rgba(252, 211, 77, 0); background-color: transparent; }
 }

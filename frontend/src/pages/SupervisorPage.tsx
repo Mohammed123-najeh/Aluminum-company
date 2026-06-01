@@ -80,7 +80,7 @@ export const SupervisorPage: React.FC<Props> = ({ onLogout, initialAiShareToken,
   const { employees, loading: teamLoading, error: teamError, updateEmployee, toggleStatus } = useMyEmployees();
   const [selectedReceiverId, setSelectedReceiverId] = useState<string | null>(null);
   const messages = useMessages(selectedReceiverId);
-  const { tasks, loading: tasksLoading, error: tasksError, createTask, updateTask, deleteTask, refetch: refetchTasks } = useTasks();
+  const { tasks, loading: tasksLoading, error: tasksError, createTask, updateTask, deleteTask, cancelTask, refetch: refetchTasks } = useTasks();
   const { orders, loading: ordersLoading, error: ordersError } = useOrders();
 
   const initials = adminProfile.name
@@ -358,6 +358,7 @@ export const SupervisorPage: React.FC<Props> = ({ onLogout, initialAiShareToken,
               onCreateTask={createTask}
               onUpdateTask={updateTask}
               onDeleteTask={deleteTask}
+              onCancelTask={cancelTask}
               refetchTasks={refetchTasks}
             />
           </SectionPanel>

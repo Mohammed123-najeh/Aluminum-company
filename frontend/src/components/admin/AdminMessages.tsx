@@ -3,7 +3,7 @@ import { useApp } from '../../contexts/AppContext';
 import type { User } from '../../types/user';
 import type { ApiMessage } from '../../services/api';
 import type { MessageThreadSummary } from '../../hooks/useMessages';
-import { onFocusFlash, flashElement } from '../../utils/focusFlash';
+import { onFocusFlash, flashById } from '../../utils/focusFlash';
 
 type Props = {
   staff: User[];
@@ -49,10 +49,7 @@ export const AdminMessages: React.FC<Props> = ({
 
   useEffect(() => {
     return onFocusFlash('message', (messageId) => {
-      window.requestAnimationFrame(() => {
-        const node = document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`);
-        flashElement(node);
-      });
+      flashById(`[data-message-id="${CSS.escape(messageId)}"]`);
     });
   }, []);
 

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import { messagesApi, type ApiMessage, type ApiMessageContact, type ApiMessageThreadSummary, type ApiMessageInboxSummary, type ApiTask } from '../../services/api';
 import type { MessageThreadSummary } from '../../hooks/useMessages';
-import { onFocusFlash, flashElement } from '../../utils/focusFlash';
+import { onFocusFlash, flashById } from '../../utils/focusFlash';
 
 function isInboxSummary(s: MessageThreadSummary): s is ApiMessageInboxSummary {
   return 'senderId' in s;
@@ -86,10 +86,7 @@ export const EmployeeMessages: React.FC<Props> = ({
   // Notification deep-link: scroll the matching message into view and flash it.
   useEffect(() => {
     return onFocusFlash('message', (messageId) => {
-      window.requestAnimationFrame(() => {
-        const node = document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`);
-        flashElement(node);
-      });
+      flashById(`[data-message-id="${CSS.escape(messageId)}"]`);
     });
   }, []);
 

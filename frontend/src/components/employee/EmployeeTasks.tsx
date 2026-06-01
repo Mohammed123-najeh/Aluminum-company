@@ -5,7 +5,7 @@ import { useStorehouse } from '../../hooks/useStorehouse';
 import type { ApiTask, ApiUser, TaskStatus } from '../../services/api';
 import { taskDueBucket } from '../../utils/taskDates';
 import { stripCustomOrderFence } from '../../utils/taskDescription';
-import { onFocusFlash, flashElement } from '../../utils/focusFlash';
+import { onFocusFlash, flashById } from '../../utils/focusFlash';
 import { CreateOrderModal } from './CreateOrderModal';
 import { EmployeeTaskDetailPanel } from './EmployeeTaskDetailPanel';
 import { SalesTaskFulfillmentModal } from './SalesTaskFulfillmentModal';
@@ -68,13 +68,11 @@ export const EmployeeTasks: React.FC<Props> = ({
   }, [focusTaskId, onFocusTaskConsumed]);
 
   // Notification deep-link: scroll the task row into view and apply a 2s flash.
+  // flashById retries until the section panel becomes visible, so we don't have
+  // to guess at a fixed wait time.
   useEffect(() => {
     return onFocusFlash('task', (taskId) => {
-      // Defer so the row is mounted (especially right after navigation).
-      window.requestAnimationFrame(() => {
-        const node = document.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(taskId)}"]`);
-        flashElement(node);
-      });
+      flashById(`[data-task-id="${CSS.escape(taskId)}"]`);
     });
   }, []);
 

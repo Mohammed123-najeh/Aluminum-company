@@ -69,7 +69,7 @@ export const NotificationBell: React.FC<Props> = ({
       onOpenMessagesWithPeer(n.data.peerId);
       if (n.data.messageId) {
         // Give the message thread a moment to render after navigation, then flash.
-        window.setTimeout(() => emitFocusFlash({ kind: 'message', id: String(n.data.messageId) }), 350);
+        emitFocusFlash({ kind: 'message', id: String(n.data.messageId) });
       }
       return;
     }
@@ -84,7 +84,7 @@ export const NotificationBell: React.FC<Props> = ({
       const tid = n.data.taskId;
       onOpenTasks(tid);
       if (tid) {
-        window.setTimeout(() => emitFocusFlash({ kind: 'task', id: String(tid) }), 350);
+        emitFocusFlash({ kind: 'task', id: String(tid) });
       }
       return;
     }
@@ -95,21 +95,21 @@ export const NotificationBell: React.FC<Props> = ({
     if ((n.type === 'hr_leave_pending' || n.type === 'hr_leave_decided') && n.data.leaveRequestId) {
       if (onOpenHrLeaves) onOpenHrLeaves();
       else if (onOpenRequests) onOpenRequests();
-      window.setTimeout(() => emitFocusFlash({ kind: 'leave-request', id: String(n.data.leaveRequestId) }), 350);
+      emitFocusFlash({ kind: 'leave-request', id: String(n.data.leaveRequestId) });
       return;
     }
 
     // Salary requests
     if ((n.type === 'admin_salary_pending' || n.type === 'hr_salary_pending' || n.type === 'hr_salary_decided') && n.data.salaryRequestId) {
       if (onOpenRequests) onOpenRequests();
-      window.setTimeout(() => emitFocusFlash({ kind: 'salary-request', id: String(n.data.salaryRequestId) }), 350);
+      emitFocusFlash({ kind: 'salary-request', id: String(n.data.salaryRequestId) });
       return;
     }
 
     // Debit (salary advance) requests
     if ((n.type === 'hr_debit_pending' || n.type === 'hr_debit_decided') && n.data.debitRequestId) {
       if (onOpenRequests) onOpenRequests();
-      window.setTimeout(() => emitFocusFlash({ kind: 'debit-request', id: String(n.data.debitRequestId) }), 350);
+      emitFocusFlash({ kind: 'debit-request', id: String(n.data.debitRequestId) });
       return;
     }
 
@@ -117,7 +117,7 @@ export const NotificationBell: React.FC<Props> = ({
     if ((n.type === 'admin_submission_pending' || n.type === 'admin_submission_decided') && n.data.submissionId) {
       if (onOpenAdminSubmissions) onOpenAdminSubmissions();
       else if (onOpenRequests) onOpenRequests();
-      window.setTimeout(() => emitFocusFlash({ kind: 'submission', id: String(n.data.submissionId) }), 350);
+      emitFocusFlash({ kind: 'submission', id: String(n.data.submissionId) });
       return;
     }
   };

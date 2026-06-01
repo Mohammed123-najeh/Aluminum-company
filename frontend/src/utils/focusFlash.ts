@@ -50,14 +50,42 @@ export function onFocusFlash(
 
 /**
  * Apply a 2-second flash highlight to a DOM node. Adds the ring + a small
- * pulse animation, scrolls the node into view, then cleans up. Safe to call
- * even when the node is null.
+ * pulse animation, scrolls the node into view, then cleans up.
+ *
+ * If the element exists but isn't visible yet (parent is display:none, e.g.
+ * the section panel hasn't switched over), we don't bail — the caller's
+ * `flashById` helper retries until the node has a non-zero size.
  */
 export function flashElement(el: HTMLElement | null): void {
   if (!el) return;
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // Re-add the class even if it's already present (e.g. another flash triggered
+  // mid-animation) by removing it for one frame first so the animation restarts.
+  el.classList.remove('flash-target');
+  void el.offsetWidth; // force reflow so the animation re-triggers
   el.classList.add('flash-target');
   window.setTimeout(() => {
     el.classList.remove('flash-target');
-  }, 2000);
+  }, 3000);
+}
+
+/**
+ * Look up a `data-…-id` element by id and flash it. Retries up to ~1.5s
+ * because notification clicks navigate to a section that may still be
+ * mounting when the flash event arrives. Each retry waits 100ms.
+ */
+export function flashById(selector: string, attempts = 15): void {
+  const tick = () => {
+    const node = document.querySelector<HTMLElement>(selector);
+    if (node && node.offsetParent !== null) {
+      // offsetParent is null when the node (or any ancestor) is display:none,
+      // so this check both confirms existence and visibility.
+      flashElement(node);
+      return;
+    }
+    if (attempts > 1) {
+      window.setTimeout(() => flashById(selector, attempts - 1), 100);
+    }
+  };
+  tick();
 }

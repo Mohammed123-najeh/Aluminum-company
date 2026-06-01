@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Client;
 use App\Models\Order;
+use App\Models\OrderPayment;
 use App\Models\Message;
 use App\Models\Task;
 use App\Models\TaskAttachment;
@@ -11,6 +12,8 @@ use App\Models\User;
 use App\Services\FinalizeDraftOrderForCompletedTask;
 use App\Services\InAppNotifier;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 
 class TaskController extends Controller
@@ -342,6 +345,138 @@ class TaskController extends Controller
         }
     }
 
+    /**
+     * Cancel a task. Only the owning supervisor (or admin) may call this.
+     *
+     * Side effects, all inside a single transaction:
+     * - status set to "cancelled", cancelled_at/reason recorded.
+     * - linked Order, if present:
+     *     * if it had a paid amount, a negative OrderPayment row is inserted
+     *       (acts as a refund record on the audit trail) and amount_paid is
+     *       zeroed out.
+     *     * Order.status flipped to "cancelled" so client outstanding-debt
+     *       aggregates drop it immediately (ClientController already filters
+     *       out cancelled orders).
+     * - notifies every assignee (so they stop working on it).
+     * - notifies every HR and Finance employee (so they see refunds + history).
+     *
+     * Refuses to cancel tasks already in a terminal state.
+     */
+    public function cancel(Request $request, Task $task)
+    {
+        $user = $request->user();
+        $isOwner = $user->role === 'supervisor' && (int) $task->supervisor_id === (int) $user->id;
+        $isAdmin = $user->role === 'admin';
+        if (! $isOwner && ! $isAdmin) {
+            return response()->json(['message' => 'Only the owning supervisor or an admin can cancel this task'], 403);
+        }
+        if ($task->status === Task::STATUS_COMPLETED) {
+            return response()->json(['message' => 'A completed task cannot be cancelled'], 422);
+        }
+        if ($task->status === Task::STATUS_CANCELLED) {
+            return response()->json(['message' => 'Task is already cancelled'], 422);
+        }
+
+        $data = $request->validate([
+            'reason' => 'nullable|string|max:2000',
+        ]);
+
+        return DB::transaction(function () use ($task, $user, $data) {
+            // Re-fetch the task with a row lock so two simultaneous cancels can't
+            // both pass the status check + both create refund rows. The earlier
+            // status validation outside the transaction was a fast-path; this
+            // is the authoritative check.
+            $locked = Task::query()->lockForUpdate()->find($task->id);
+            if (! $locked) {
+                return response()->json(['message' => 'Task no longer exists'], 410);
+            }
+            if ($locked->status === Task::STATUS_COMPLETED || $locked->status === Task::STATUS_CANCELLED) {
+                return response()->json(['message' => 'Task is already in a terminal state'], 422);
+            }
+            $task = $locked;
+
+            $refundedAmount = 0.0;
+
+            if ($task->order_id) {
+                /** @var Order|null $order */
+                $order = Order::query()->lockForUpdate()->find($task->order_id);
+                if ($order) {
+                    $paid = (float) ($order->amount_paid ?? 0);
+                    if ($paid > 0.009 && Schema::hasTable('order_payments')) {
+                        OrderPayment::create([
+                            'order_id' => $order->id,
+                            'amount' => -round($paid, 2),
+                            'paid_at' => now(),
+                            'recorded_by' => $user->id,
+                            'note' => 'Refund — task cancelled' . (! empty($data['reason']) ? ': ' . $data['reason'] : ''),
+                        ]);
+                        $refundedAmount = round($paid, 2);
+                    }
+                    $order->amount_paid = 0;
+                    $order->status = 'cancelled';
+                    $order->save();
+                }
+            }
+
+            $task->status = Task::STATUS_CANCELLED;
+            $task->cancelled_at = now();
+            $task->cancellation_reason = $data['reason'] ?? null;
+            $task->save();
+
+            // Notify assignees so they stop working on it. Reuse the existing
+            // notifier + a Message row so the cancel reason appears in their inbox.
+            $task->load('assignees:id,name,email');
+            $assigneeBody = 'Task #' . $task->id . ' (' . $task->title . ') was cancelled.';
+            if (! empty($data['reason'])) {
+                $assigneeBody .= ' Reason: ' . $data['reason'];
+            }
+            if ($refundedAmount > 0) {
+                $assigneeBody .= ' (Customer refund: ' . number_format($refundedAmount, 2) . ' ILS)';
+            }
+            foreach ($task->assignees as $assignee) {
+                InAppNotifier::taskCancelledBySupervisor($assignee, $task);
+                Message::create([
+                    'sender_id' => $user->id,
+                    'receiver_id' => $assignee->id,
+                    'body' => $assigneeBody,
+                    'task_id' => $task->id,
+                ]);
+            }
+
+            // Notify HR + Finance so they have a refund audit trail.
+            $staff = User::query()
+                ->where('role', 'employee')
+                ->whereIn('employee_type', ['hr', 'accountant'])
+                ->where('status', 'active')
+                ->get();
+            $staffBody = 'Task #' . $task->id . ' (' . $task->title . ') was cancelled by ' . $user->name . '.';
+            if ($refundedAmount > 0) {
+                $staffBody .= ' Customer refund: ' . number_format($refundedAmount, 2) . ' ILS.';
+            }
+            if (! empty($data['reason'])) {
+                $staffBody .= ' Reason: ' . $data['reason'];
+            }
+            foreach ($staff as $staffMember) {
+                // Staff-specific copy (the supervisor's "you do not need to work on it"
+                // line doesn't apply to HR/Finance — they're observers).
+                InAppNotifier::taskCancelledForStaff($staffMember, $task, $refundedAmount);
+                // Also drop a message in their inbox so the audit is visible alongside the bell.
+                Message::create([
+                    'sender_id' => $user->id,
+                    'receiver_id' => $staffMember->id,
+                    'body' => $staffBody,
+                    'task_id' => $task->id,
+                ]);
+            }
+
+            $task->refresh();
+            return response()->json([
+                'task' => $this->taskToArray($task),
+                'refundedAmount' => $refundedAmount,
+            ]);
+        });
+    }
+
     private function taskToArray(Task $task): array
     {
         $task->loadMissing(['assignees:id,name,email', 'client:id,name,phone,email', 'attachments', 'order.items.profile.category', 'order.items.color']);
@@ -378,6 +513,8 @@ class TaskController extends Controller
             'description' => $task->description,
             'status' => $task->status,
             'completedAt' => $task->completed_at?->toISOString(),
+            'cancelledAt' => $task->cancelled_at?->toISOString(),
+            'cancellationReason' => $task->cancellation_reason,
             'dueDate' => $task->due_date?->format('Y-m-d'),
             'orderReference' => $task->order_reference,
             'customerName' => $task->customer_name,

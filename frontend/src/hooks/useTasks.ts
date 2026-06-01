@@ -99,6 +99,16 @@ export function useTasks(filters?: TaskFilters) {
     [token],
   );
 
+  const cancelTask = useCallback(
+    async (id: string, reason: string | null) => {
+      if (!token) return undefined;
+      const { task: updated, refundedAmount } = await tasksApi.cancel(id, reason, token);
+      setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
+      return { task: updated, refundedAmount };
+    },
+    [token],
+  );
+
   const uploadTaskAttachment = useCallback(
     async (taskId: string, file: File) => {
       if (!token) return undefined;
@@ -126,6 +136,7 @@ export function useTasks(filters?: TaskFilters) {
     createTask,
     updateTask,
     deleteTask,
+    cancelTask,
     uploadTaskAttachment,
     deleteTaskAttachment,
     refetch: fetchTasks,

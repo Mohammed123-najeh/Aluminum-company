@@ -45,6 +45,7 @@ type Props = {
     },
   ) => Promise<ApiTask | undefined>;
   onDeleteTask: (id: string) => Promise<void>;
+  onCancelTask?: (id: string, reason: string | null) => Promise<{ task: ApiTask; refundedAmount: number } | undefined>;
   refetchTasks?: () => void | Promise<void>;
 };
 
@@ -56,6 +57,7 @@ export const SupervisorTasks: React.FC<Props> = ({
   onCreateTask,
   onUpdateTask,
   onDeleteTask,
+  onCancelTask,
   refetchTasks,
 }) => {
   const { t } = useApp();
@@ -67,6 +69,13 @@ export const SupervisorTasks: React.FC<Props> = ({
   const [showAddChooser, setShowAddChooser] = useState(false);
   const [editTask, setEditTask] = useState<ApiTask | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Cancellation flow: clicking Cancel opens a confirmation panel with the
+  // refund summary + optional reason. Kept inline so we don't need another
+  // modal file just for one confirm step.
+  const [cancelTarget, setCancelTarget] = useState<ApiTask | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const filteredTasks = tasks.filter(() => {
     return true;
@@ -118,6 +127,27 @@ export const SupervisorTasks: React.FC<Props> = ({
       await onDeleteTask(id);
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const openCancelDialog = (task: ApiTask) => {
+    setCancelTarget(task);
+    setCancelReason('');
+    setCancelError(null);
+  };
+
+  const confirmCancel = async () => {
+    if (!cancelTarget || !onCancelTask) return;
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      await onCancelTask(cancelTarget.id, cancelReason.trim() || null);
+      setCancelTarget(null);
+      setCancelReason('');
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : t('taskCancelError'));
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -219,6 +249,17 @@ export const SupervisorTasks: React.FC<Props> = ({
                 >
                   {t('edit')}
                 </button>
+                {/* Cancel button only when the task is still in progress and we have a handler.
+                    Completed/cancelled tasks shouldn't be re-cancelled. */}
+                {onCancelTask && (task.status === 'pending' || task.status === 'in_progress') && (
+                  <button
+                    type="button"
+                    onClick={() => openCancelDialog(task)}
+                    className="rounded-lg border border-amber-200 px-2 py-1.5 text-xs font-medium text-amber-700 transition hover:bg-amber-50 dark:border-amber-900/60 dark:text-amber-300 dark:hover:bg-amber-950/30"
+                  >
+                    {t('taskCancelButton')}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => handleDelete(task.id)}
@@ -320,6 +361,86 @@ export const SupervisorTasks: React.FC<Props> = ({
                   <span className="block text-xs text-slate-500 dark:text-slate-400">{t('addTaskChooserCustomDesc')}</span>
                 </span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cancelTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/55 backdrop-blur-sm"
+            onClick={() => !cancelling && setCancelTarget(null)}
+            aria-hidden
+          />
+          <div className="relative w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-800">
+            <div className="bg-linear-to-r from-amber-500 to-rose-500 px-5 py-4 text-white">
+              <h2 className="text-base font-bold leading-tight">{t('taskCancelDialogTitle')}</h2>
+              <p className="mt-0.5 text-xs text-white/85">
+                {t('taskCancelDialogSubtitle').replace('{title}', cancelTarget.title)}
+              </p>
+            </div>
+            <div className="space-y-4 p-5">
+              {/* Refund preview — pulled directly from the order's amountPaid. */}
+              {(() => {
+                const paid = cancelTarget.order?.amountPaid ?? 0;
+                const total = cancelTarget.order?.totalAmount ?? null;
+                if (paid > 0.009) {
+                  return (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                      <p className="font-semibold">{t('taskCancelRefundWarning')}</p>
+                      <p className="mt-1">
+                        {t('taskCancelRefundLine')
+                          .replace('{paid}', paid.toFixed(2))
+                          .replace('{total}', total != null ? total.toFixed(2) : '—')}
+                      </p>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-600 dark:bg-slate-900/50 dark:text-slate-300">
+                    {t('taskCancelNoPayment')}
+                  </div>
+                );
+              })()}
+
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-400">
+                  {t('taskCancelReasonLabel')}
+                </label>
+                <textarea
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  rows={3}
+                  placeholder={t('taskCancelReasonPlaceholder')}
+                  className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                />
+              </div>
+
+              {cancelError && (
+                <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+                  {cancelError}
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCancelTarget(null)}
+                  disabled={cancelling}
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                >
+                  {t('cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void confirmCancel()}
+                  disabled={cancelling}
+                  className="rounded-lg bg-linear-to-r from-amber-500 to-rose-500 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:from-amber-400 hover:to-rose-400 disabled:opacity-50"
+                >
+                  {cancelling ? '…' : t('taskCancelConfirm')}
+                </button>
+              </div>
             </div>
           </div>
         </div>

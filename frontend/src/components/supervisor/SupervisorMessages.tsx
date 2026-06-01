@@ -4,7 +4,7 @@ import type { User } from '../../types/user';
 import type { ApiMessage, ApiTask, ApiMessageContact } from '../../services/api';
 import { usersApi, messagesApi } from '../../services/api';
 import type { MessageThreadSummary } from '../../hooks/useMessages';
-import { onFocusFlash, flashElement } from '../../utils/focusFlash';
+import { onFocusFlash, flashById } from '../../utils/focusFlash';
 
 type Props = {
   employees: User[];
@@ -120,10 +120,7 @@ export const SupervisorMessages: React.FC<Props> = ({
 
   useEffect(() => {
     return onFocusFlash('message', (messageId) => {
-      window.requestAnimationFrame(() => {
-        const node = document.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`);
-        flashElement(node);
-      });
+      flashById(`[data-message-id="${CSS.escape(messageId)}"]`);
     });
   }, []);
 

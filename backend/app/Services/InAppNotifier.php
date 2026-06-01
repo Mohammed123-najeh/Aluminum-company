@@ -70,9 +70,32 @@ class InAppNotifier
             'user_id' => $assignee->id,
             'type' => UserNotification::TYPE_TASK_CANCELLED,
             'title' => 'Task cancelled by supervisor',
-            'body' => 'Task #'.$task->id.' — “'.$task->title.'”. You do not need to work on it.',
+            'body' => 'Task #'.$task->id.' — "'.$task->title.'". You do not need to work on it.',
             'data' => [
                 'taskId' => (string) $task->id,
+            ],
+        ]);
+    }
+
+    /**
+     * Cancelled-task notice for HR / Finance staff. Same kind as the assignee
+     * notification (so the bell counts it) but framed for an observer rather
+     * than someone who was working on the task.
+     */
+    public static function taskCancelledForStaff(User $staff, Task $task, float $refundedAmount = 0.0): void
+    {
+        $body = 'Task #'.$task->id.' ("'.$task->title.'") was cancelled.';
+        if ($refundedAmount > 0) {
+            $body .= ' Customer refund: '.number_format($refundedAmount, 2).' ILS.';
+        }
+        UserNotification::create([
+            'user_id' => $staff->id,
+            'type' => UserNotification::TYPE_TASK_CANCELLED,
+            'title' => 'Task cancelled',
+            'body' => $body,
+            'data' => [
+                'taskId' => (string) $task->id,
+                'refundedAmount' => (string) $refundedAmount,
             ],
         ]);
     }

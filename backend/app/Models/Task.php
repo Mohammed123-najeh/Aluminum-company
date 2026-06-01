@@ -20,6 +20,8 @@ class Task extends Model
         'description',
         'status',
         'completed_at',
+        'cancelled_at',
+        'cancellation_reason',
         'due_date',
         'order_reference',
         'customer_name',
@@ -33,6 +35,7 @@ class Task extends Model
         return [
             'due_date' => 'date',
             'completed_at' => 'datetime',
+            'cancelled_at' => 'datetime',
         ];
     }
 
