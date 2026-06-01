@@ -1,26 +1,49 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../../contexts/AppContext';
-import { financeCenterApi, type ApiFinanceDashboard } from '../../../services/api';
+import { financeCenterApi, ordersApi, type ApiFinanceDashboard, type ApiOrder } from '../../../services/api';
 import { formatIls } from '../../../utils/currency';
-import { KpiCard, MiniChart, DataTable, StatusBadge, COLORS, type Column } from '../../shared/dash';
+import { KpiCard, StatusBadge } from '../../shared/dash';
 
-const CATEGORY_COLORS = [COLORS.indigo, COLORS.emerald, COLORS.amber, COLORS.rose, COLORS.violet, COLORS.slate];
+/**
+ * Overview tab — 7-tile financial KPI grid + recent-orders table.
+ * Layout matches the screenshot: 4 KPIs per row, the 4th row position empty
+ * to give the "Unpaid orders" tile breathing room.
+ */
+type Props = {
+  /** Called when the user clicks "View all" on the recent-orders block. */
+  onViewAllOrders?: () => void;
+};
 
-export const FinanceOverviewTab: React.FC = () => {
-  const { token, t, lang } = useApp();
+export const FinanceOverviewTab: React.FC<Props> = ({ onViewAllOrders }) => {
+  const { token, t } = useApp();
   const [data, setData] = useState<ApiFinanceDashboard | null>(null);
+  const [orders, setOrders] = useState<ApiOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
-    setLoading(true); setErr(null);
-    try { setData(await financeCenterApi.dashboard(token)); }
-    catch (e) { setErr(e instanceof Error ? e.message : 'Failed to load'); }
-    finally { setLoading(false); }
+    setLoading(true);
+    setErr(null);
+    try {
+      const [d, o] = await Promise.all([
+        financeCenterApi.dashboard(token),
+        ordersApi.list(token, { receipts_only: true }),
+      ]);
+      setData(d);
+      // Most recently updated first.
+      const sorted = [...o].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      setOrders(sorted.slice(0, 5));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to load');
+    } finally {
+      setLoading(false);
+    }
   }, [token]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   if (loading && !data) return <p className="text-sm text-slate-500">{t('fin.common.loading')}</p>;
   if (err) return <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</div>;
@@ -28,80 +51,134 @@ export const FinanceOverviewTab: React.FC = () => {
 
   const k = data.kpi;
 
-  const trendLabels = data.trend.map((r) => r.month.slice(5));
-  const trendSeries = [
-    { label: t('fin.dashboard.trend.revenue'), values: data.trend.map((r) => r.revenue), color: COLORS.emerald },
-    { label: t('fin.dashboard.trend.expenses'), values: data.trend.map((r) => r.expenses), color: COLORS.rose },
-  ];
-
-  const slices = data.byCategory.slice(0, 6).map((c, i) => ({
-    label: lang === 'ar' ? (c.nameAr ?? c.nameEn ?? '—') : (c.nameEn ?? c.nameAr ?? '—'),
-    value: c.total,
-    color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
-  }));
-
-  const txCols: Column<ApiFinanceDashboard['recent'][number]>[] = [
-    { key: 'date', header: t('fin.revenue.col.date'), render: (r) => r.date ?? '—' },
-    { key: 'type', header: t('fin.payments.col.type'), render: (r) => (
-      <StatusBadge status={r.type} tone={r.type === 'revenue' ? 'green' : 'rose'} label={r.type === 'revenue' ? t('fin.revenue.title') : t('fin.payments.title')} />
-    ) },
-    { key: 'party', header: t('fin.revenue.col.party'), render: (r) => r.partyName ?? '—' },
-    { key: 'amount', header: t('fin.revenue.col.amount'), align: 'end', render: (r) => formatIls(Number(r.amount)) },
-    { key: 'status', header: t('fin.revenue.col.status'), render: (r) => <StatusBadge status={r.status} /> },
-  ];
+  const orderRows = orders.map((o) => {
+    const total = o.totalAmount ?? 0;
+    const paid = o.amountPaid ?? 0;
+    const remaining = Math.max(0, total - paid);
+    const statusTone: 'green' | 'amber' | 'rose' | 'slate' =
+      o.paymentStatus === 'paid' ? 'green'
+      : o.paymentStatus === 'partial' ? 'amber'
+      : o.paymentStatus === 'unpaid' ? 'rose'
+      : 'slate';
+    const statusLabel =
+      o.paymentStatus === 'paid' ? t('fin.overview.statusPaid')
+      : o.paymentStatus === 'partial' ? t('fin.overview.statusPartial')
+      : o.paymentStatus === 'unpaid' ? t('fin.overview.statusUnpaid')
+      : t('fin.overview.statusUnknown');
+    return {
+      id: o.id,
+      number: o.receiptNumber ?? `ORD-${o.id}`,
+      customer: o.clientName ?? o.taskCustomerName ?? o.customerReference ?? '—',
+      total,
+      paid,
+      remaining,
+      statusTone,
+      statusLabel,
+    };
+  });
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
+      {/* KPI grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard label={t('fin.kpi.revenueToday')} value={formatIls(k.revenueToday.value)} tone="positive" delta={k.revenueToday} />
-        <KpiCard label={t('fin.kpi.revenueMonth')} value={formatIls(k.revenue.value)} tone="positive" delta={k.revenue} />
-        <KpiCard label={t('fin.kpi.expensesToday')} value={formatIls(k.expensesToday.value)} tone="danger" delta={k.expensesToday} />
-        <KpiCard label={t('fin.kpi.expensesMonth')} value={formatIls(k.expenses.value)} tone="danger" delta={k.expenses} />
+        <KpiCard
+          label={t('admin.fin.revenueToday')}
+          value={`${formatIls(k.revenueToday.value)}`}
+          tone="positive"
+          delta={k.revenueToday}
+          icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 17l6-6 4 4 8-8M14 7h7v7" /></svg>}
+        />
+        <KpiCard
+          label={t('admin.fin.revenueMonth')}
+          value={`${formatIls(k.revenue.value)}`}
+          tone="accent"
+          delta={k.revenue}
+          icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" /></svg>}
+        />
+        <KpiCard
+          label={t('admin.fin.expenseToday')}
+          value={`${formatIls(k.expensesToday.value)}`}
+          tone="danger"
+          delta={k.expensesToday}
+          icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7l6 6 4-4 8 8M14 17h7v-7" /></svg>}
+        />
+        <KpiCard
+          label={t('admin.fin.expenseMonth')}
+          value={`${formatIls(k.expenses.value)}`}
+          tone="danger"
+          delta={k.expenses}
+          icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7l6 6 4-4 8 8M14 17h7v-7" /></svg>}
+        />
 
-        <KpiCard label={t('fin.kpi.netToday')} value={formatIls(k.netToday.value)} tone="accent" />
-        <KpiCard label={t('fin.kpi.netMonth')} value={formatIls(k.net.value)} tone="accent" delta={k.net} />
-        <KpiCard label={t('fin.dashboard.kpi.receivables')} value={formatIls(k.receivables.value)} tone="warning" />
-        <KpiCard label={t('fin.kpi.incompletePayments')} value={`${k.incompletePaymentCount} ${t('fin.kpi.unit.order')}`} tone="warning" />
+        <KpiCard
+          label={t('admin.fin.netToday')}
+          value={`${formatIls(k.netToday.value)}`}
+          tone="positive"
+          icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5"><path strokeLinecap="round" strokeLinejoin="round" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><path strokeLinecap="round" strokeLinejoin="round" d="M14 2v6h6M8 13h8M8 17h5" /></svg>}
+        />
+        <KpiCard
+          label={t('admin.fin.netMonth')}
+          value={`${formatIls(k.net.value)}`}
+          tone="accent"
+          delta={k.net}
+          icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5"><path strokeLinecap="round" strokeLinejoin="round" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><path strokeLinecap="round" strokeLinejoin="round" d="M14 2v6h6M8 13h8M8 17h5" /></svg>}
+        />
+        <KpiCard
+          label={t('admin.fin.unpaidOrders')}
+          value={`${k.incompletePaymentCount} ${t('admin.fin.unit.order')}`}
+          tone="warning"
+          icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5"><circle cx="12" cy="12" r="10" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4M12 16h.01" /></svg>}
+        />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <section className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-          <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">{t('fin.dashboard.trend.title')}</h3>
-          <MiniChart kind="bar" labels={trendLabels} series={trendSeries} height={200} />
-        </section>
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-          <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">{t('fin.dashboard.byCategory.title')}</h3>
-          {slices.length > 0 ? (
-            <MiniChart kind="donut" slices={slices} height={150} />
-          ) : (
-            <p className="py-6 text-center text-xs text-slate-400">{t('fin.common.empty')}</p>
+      {/* Recent orders */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t('fin.overview.recentTitle')}</h3>
+          {onViewAllOrders && (
+            <button
+              type="button"
+              onClick={onViewAllOrders}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+            >
+              {t('fin.overview.viewAll')}
+            </button>
           )}
-        </section>
-      </div>
+        </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <section className="lg:col-span-2">
-          <h3 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t('fin.dashboard.recent.title')}</h3>
-          <DataTable rows={data.recent} columns={txCols} rowKey={(r) => r.id} empty={t('fin.common.empty')} dense />
-        </section>
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-          <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">{t('fin.dashboard.alerts.title')}</h3>
-          <ul className="space-y-2 text-sm">
-            <li className="flex items-center justify-between rounded-lg bg-rose-50 px-3 py-2 dark:bg-rose-950/30">
-              <span className="text-rose-800 dark:text-rose-200">{t('fin.dashboard.alerts.overdueInvoices')}</span>
-              <span className="font-bold tabular-nums text-rose-900 dark:text-rose-100">{data.alerts.overdueInvoices}</span>
-            </li>
-            <li className="flex items-center justify-between rounded-lg bg-amber-50 px-3 py-2 dark:bg-amber-950/30">
-              <span className="text-amber-800 dark:text-amber-200">{t('fin.dashboard.alerts.pendingAdvances')}</span>
-              <span className="font-bold tabular-nums text-amber-900 dark:text-amber-100">{data.alerts.pendingAdvances}</span>
-            </li>
-            <li className="flex items-center justify-between rounded-lg bg-orange-50 px-3 py-2 dark:bg-orange-950/30">
-              <span className="text-orange-800 dark:text-orange-200">{t('fin.dashboard.alerts.debtsOver30')}</span>
-              <span className="font-bold tabular-nums text-orange-900 dark:text-orange-100">{formatIls(data.alerts.debtsOver30)}</span>
-            </li>
-          </ul>
-        </section>
-      </div>
+        {orderRows.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">{t('fin.overview.empty')}</p>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:border-slate-700 dark:text-slate-500">
+                  <th className="pb-2 text-start">{t('fin.overview.colOrderNo')}</th>
+                  <th className="pb-2 text-start">{t('fin.overview.colCustomer')}</th>
+                  <th className="pb-2 text-end">{t('fin.overview.colTotal')}</th>
+                  <th className="pb-2 text-end">{t('fin.overview.colPaid')}</th>
+                  <th className="pb-2 text-end">{t('fin.overview.colRemaining')}</th>
+                  <th className="pb-2 text-start">{t('fin.overview.colStatus')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                {orderRows.map((r) => (
+                  <tr key={r.id} className="text-slate-700 dark:text-slate-300">
+                    <td className="py-3 font-semibold text-slate-900 dark:text-slate-100">{r.number}</td>
+                    <td className="py-3">{r.customer}</td>
+                    <td className="py-3 text-end tabular-nums">{formatIls(r.total)}</td>
+                    <td className="py-3 text-end tabular-nums text-emerald-600 dark:text-emerald-400">{formatIls(r.paid)}</td>
+                    <td className="py-3 text-end tabular-nums text-rose-600 dark:text-rose-400">{formatIls(r.remaining)}</td>
+                    <td className="py-3">
+                      <StatusBadge status={r.statusLabel} tone={r.statusTone} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 };
