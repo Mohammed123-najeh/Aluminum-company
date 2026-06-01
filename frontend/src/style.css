@@ -51,6 +51,23 @@ body {
   .no-print {
     display: none !important;
   }
+  /* Receipt-only print: when `printing-receipt` is on <body>, hide
+   * everything except the receipt card so the print shows just the voucher
+   * (no backdrop, no app chrome). The card is then pinned to the page. */
+  body.printing-receipt > *:not(:has(.receipt-printable)) {
+    display: none !important;
+  }
+  body.printing-receipt .receipt-printable {
+    position: fixed !important;
+    inset: 0 !important;
+    margin: 0 !important;
+    padding: 24px !important;
+    background: #ffffff !important;
+    color: #000 !important;
+    width: 100% !important;
+    max-width: none !important;
+    z-index: 9999 !important;
+  }
 }
 
 /* Notification deep-link highlight: applied for ~3s after the user clicks a

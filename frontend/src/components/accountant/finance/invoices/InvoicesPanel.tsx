@@ -5,8 +5,9 @@ import { CustomerInvoicesTab } from './CustomerInvoicesTab';
 import { SupplierInvoicesTab } from './SupplierInvoicesTab';
 import { ReceiptVouchersTab } from './ReceiptVouchersTab';
 import { PaymentVouchersTab } from './PaymentVouchersTab';
+import { OrderPaymentReceiptsTab } from './OrderPaymentReceiptsTab';
 
-type Tab = 'customer' | 'supplier' | 'receipt' | 'payment';
+type Tab = 'customer' | 'supplier' | 'receipt' | 'orderReceipts' | 'payment';
 
 export const InvoicesPanel: React.FC = () => {
   const { t } = useApp();
@@ -16,6 +17,7 @@ export const InvoicesPanel: React.FC = () => {
     { key: 'customer', label: t('fin.invoices.tab.customer') },
     { key: 'supplier', label: t('fin.invoices.tab.supplier') },
     { key: 'receipt', label: t('fin.invoices.tab.receipt') },
+    { key: 'orderReceipts', label: t('fin.invoices.tab.orderReceipts') },
     { key: 'payment', label: t('fin.invoices.tab.payment') },
   ];
 
@@ -42,6 +44,7 @@ export const InvoicesPanel: React.FC = () => {
       {tab === 'customer' && <CustomerInvoicesTab />}
       {tab === 'supplier' && <SupplierInvoicesTab />}
       {tab === 'receipt' && <ReceiptVouchersTab />}
+      {tab === 'orderReceipts' && <OrderPaymentReceiptsTab />}
       {tab === 'payment' && <PaymentVouchersTab />}
     </div>
   );

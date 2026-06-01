@@ -8,6 +8,8 @@ use App\Models\EmployeeDebitRequest;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\FinanceTransaction;
+use App\Models\Order;
+use App\Models\OrderPayment;
 use App\Models\PaymentVoucher;
 use App\Models\PaymentVoucherAllocation;
 use App\Models\ReceiptVoucher;
@@ -618,6 +620,56 @@ class FinanceCenterController extends Controller
 
             return response()->json($v->fresh(['client', 'allocations'])->toApiArray(), 201);
         });
+    }
+
+    /**
+     * List every OrderPayment as a printable receipt. Returned shape is
+     * close to ReceiptVoucher::toApiArray() so the Invoices panel can
+     * render it with the same DataTable. Refunds (negative-amount rows)
+     * are excluded — they're shown in the Payments tab instead.
+     */
+    public function listOrderPaymentReceipts(Request $request)
+    {
+        if ($r = $this->gate($request)) return $r;
+
+        $rows = OrderPayment::with(['order:id,client_id,receipt_number,customer_reference', 'order.client:id,name', 'order.task:id,order_id,customer_name', 'recorder:id,name'])
+            ->where('amount', '>', 0)
+            ->orderByDesc('paid_at')
+            ->orderByDesc('id')
+            ->limit(500)
+            ->get();
+
+        $out = $rows->map(function (OrderPayment $p) {
+            $order = $p->order;
+            $client = $order?->client?->name
+                ?? $order?->task?->customer_name
+                ?? $order?->customer_reference
+                ?? null;
+            return [
+                'id' => (string) $p->id,
+                'number' => 'PAY-'.str_pad((string) $p->id, 4, '0', STR_PAD_LEFT),
+                'date' => optional($p->paid_at)->toDateString(),
+                'orderId' => $order ? (string) $order->id : null,
+                'orderRef' => $order?->receipt_number ? $order->receipt_number : ($order ? 'ORD-'.$order->id : null),
+                'clientName' => $client,
+                'amount' => round((float) $p->amount, 2),
+                'method' => $p->method,
+                'referenceNo' => $p->method === 'check' ? $p->cheque_number : null,
+                'note' => $p->note,
+                'recordedByName' => $p->recorder?->name,
+                'cheque' => $p->method === 'check' && $p->cheque_number ? [
+                    'bank' => $p->cheque_bank,
+                    'number' => $p->cheque_number,
+                    'holder' => $p->cheque_holder,
+                    'amount' => $p->cheque_amount !== null ? round((float) $p->cheque_amount, 2) : null,
+                    'issueDate' => $p->cheque_issue_date?->toDateString(),
+                    'dueDate' => $p->cheque_due_date?->toDateString(),
+                    'status' => $p->cheque_status,
+                ] : null,
+            ];
+        });
+
+        return response()->json($out->values());
     }
 
     // ===== Payment vouchers =====

@@ -299,6 +299,14 @@ class OrderController extends Controller
             'amount' => 'required|numeric|min:0.01',
             'paid_at' => 'nullable|date',
             'note' => 'nullable|string|max:2000',
+            'method' => 'nullable|in:cash,transfer,check,card',
+            'cheque_bank' => 'nullable|string|max:120',
+            'cheque_number' => 'nullable|string|max:80',
+            'cheque_holder' => 'nullable|string|max:160',
+            'cheque_amount' => 'nullable|numeric|min:0',
+            'cheque_issue_date' => 'nullable|date',
+            'cheque_due_date' => 'nullable|date',
+            'cheque_status' => 'nullable|in:pending,cleared,bounced,cancelled',
         ]);
 
         $total = $order->total_amount !== null ? (float) $order->total_amount : 0.0;
@@ -311,20 +319,32 @@ class OrderController extends Controller
         }
 
         $paidAt = isset($data['paid_at']) ? \Carbon\Carbon::parse($data['paid_at']) : now();
+        $method = $data['method'] ?? null;
 
-        return DB::transaction(function () use ($order, $add, $paidAt, $data, $user) {
-            OrderPayment::create([
+        return DB::transaction(function () use ($order, $add, $paidAt, $data, $user, $method) {
+            $payment = OrderPayment::create([
                 'order_id' => $order->id,
                 'amount' => $add,
                 'paid_at' => $paidAt,
                 'recorded_by' => $user->id,
                 'note' => $data['note'] ?? null,
+                'method' => $method,
+                'cheque_bank' => $method === 'check' ? ($data['cheque_bank'] ?? null) : null,
+                'cheque_number' => $method === 'check' ? ($data['cheque_number'] ?? null) : null,
+                'cheque_holder' => $method === 'check' ? ($data['cheque_holder'] ?? null) : null,
+                'cheque_amount' => $method === 'check' ? ($data['cheque_amount'] ?? null) : null,
+                'cheque_issue_date' => $method === 'check' ? ($data['cheque_issue_date'] ?? null) : null,
+                'cheque_due_date' => $method === 'check' ? ($data['cheque_due_date'] ?? null) : null,
+                'cheque_status' => $method === 'check' ? ($data['cheque_status'] ?? 'pending') : null,
             ]);
             $order->amount_paid = round((float) ($order->amount_paid ?? 0) + $add, 2);
             $order->save();
             $order->load(['items.profile.category', 'items.color', 'creator:id,name', 'supervisor:id,name', 'client:id,name,phone,email', 'task:id,title,order_id,customer_name,client_id']);
 
-            return response()->json($this->orderToArray($order->fresh()));
+            $fresh = $this->orderToArray($order->fresh());
+            $fresh['lastPayment'] = $payment->toApiArray();
+
+            return response()->json($fresh);
         });
     }
 

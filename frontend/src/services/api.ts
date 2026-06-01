@@ -651,6 +651,16 @@ export type ApiOrderItem = {
   lineTotal?: number | null;
 };
 
+export type ApiChequeDetails = {
+  bank: string | null;
+  number: string | null;
+  holder: string | null;
+  amount: number | null;
+  issueDate: string | null;
+  dueDate: string | null;
+  status: string | null;
+};
+
 export type ApiOrderPayment = {
   id: string;
   amount: number;
@@ -658,6 +668,8 @@ export type ApiOrderPayment = {
   recordedById: string | null;
   recordedByName: string | null;
   note: string | null;
+  method: string | null;
+  cheque: ApiChequeDetails | null;
   createdAt: string;
 };
 
@@ -858,8 +870,20 @@ export const ordersApi = {
   addPayment: (
     id: string,
     token: string,
-    body: { amount: number; paid_at?: string | null; note?: string | null },
-  ) => request<ApiOrder>('POST', `/orders/${id}/payments`, body, token),
+    body: {
+      amount: number;
+      paid_at?: string | null;
+      note?: string | null;
+      method?: 'cash' | 'transfer' | 'check' | 'card' | null;
+      cheque_bank?: string | null;
+      cheque_number?: string | null;
+      cheque_holder?: string | null;
+      cheque_amount?: number | null;
+      cheque_issue_date?: string | null;
+      cheque_due_date?: string | null;
+      cheque_status?: 'pending' | 'cleared' | 'bounced' | 'cancelled' | null;
+    },
+  ) => request<ApiOrder & { lastPayment?: ApiOrderPayment }>('POST', `/orders/${id}/payments`, body, token),
   updateReceiptMeta: (id: string, token: string, body: { customer_reference?: string | null }) =>
     request<ApiOrder>('PATCH', `/orders/${id}/receipt-meta`, body, token),
 };
@@ -1673,6 +1697,23 @@ export type ApiReceiptVoucher = {
   createdAt: string | null;
 };
 
+/** Order-payment receipt — one row per OrderPayment, shown in the
+ * Invoices panel as a printable receipt. */
+export type ApiOrderPaymentReceipt = {
+  id: string;
+  number: string;
+  date: string | null;
+  orderId: string | null;
+  orderRef: string | null;
+  clientName: string | null;
+  amount: number;
+  method: string | null;
+  referenceNo: string | null;
+  note: string | null;
+  recordedByName: string | null;
+  cheque: ApiChequeDetails | null;
+};
+
 export type ApiPaymentVoucher = {
   id: string;
   number: string;
@@ -1803,6 +1844,9 @@ export const financeCenterApi = {
     amount: number; method?: string; reference_no?: string; notes?: string;
     allocations?: Array<{ invoice_id: string | number; amount: number }>;
   }) => request<ApiReceiptVoucher>('POST', '/finance/receipt-vouchers', body, token),
+
+  listOrderPaymentReceipts: (token: string) =>
+    request<ApiOrderPaymentReceipt[]>('GET', '/finance/order-payment-receipts', undefined, token),
 
   listPaymentVouchers: (token: string, params: { payee_type?: string } = {}) =>
     request<ApiPaymentVoucher[]>('GET', `/finance/payment-vouchers${qs(params)}`, undefined, token),

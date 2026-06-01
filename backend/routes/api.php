@@ -185,6 +185,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/finance/receipt-vouchers', [FinanceCenterController::class, 'listReceiptVouchers']);
     Route::post('/finance/receipt-vouchers', [FinanceCenterController::class, 'storeReceiptVoucher']);
 
+    // Order-payment receipts — every OrderPayment surfaced as a printable
+    // receipt voucher inside the Invoices panel.
+    Route::get('/finance/order-payment-receipts', [FinanceCenterController::class, 'listOrderPaymentReceipts']);
+
     Route::get('/finance/payment-vouchers', [FinanceCenterController::class, 'listPaymentVouchers']);
     Route::post('/finance/payment-vouchers', [FinanceCenterController::class, 'storePaymentVoucher']);
 
