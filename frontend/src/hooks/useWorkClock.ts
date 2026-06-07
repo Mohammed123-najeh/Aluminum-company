@@ -2,102 +2,77 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { attendanceApi } from '../services/api';
 import { useApp } from '../contexts/AppContext';
 
-const IDLE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes of no input → idle
-const HEARTBEAT_INTERVAL_MS = 30 * 1000;   // 30s between pings while active
-const REFRESH_TODAY_MS = 60 * 1000;        // pull /attendance/today every minute for accuracy
-
-/** Listened-for input events that prove the user is at the keyboard/mouse. */
-const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
-  'mousemove',
-  'mousedown',
-  'keydown',
-  'wheel',
-  'touchstart',
-  'scroll',
-  'focus',
-];
+const HEARTBEAT_INTERVAL_MS = 30 * 1000;
+const REFRESH_TODAY_MS = 60 * 1000;
+const DEFAULT_WORKDAY_LIMIT_MINUTES = 8 * 60;
 
 export type WorkClock = {
-  /** Minutes worked today (closed sessions + currently-open session, idle-trimmed). */
   minutesToday: number;
-  /** True when the user is currently active (last input within IDLE_THRESHOLD_MS). */
-  isActive: boolean;
-  /** True while a heartbeat or today-poll request is in flight. */
+  workdayLimitMinutes: number;
+  sessionStartedAt: string | null;
+  isWorking: boolean;
+  dailyLimitReached: boolean;
   loading: boolean;
-  /** Force a refresh of `minutesToday` from the server. */
   refresh: () => Promise<void>;
+  startWork: () => Promise<void>;
 };
 
-/**
- * Activity-driven attendance tracker.
- *
- * - Watches mouse/keyboard/touch/focus events to know whether the user is active.
- * - Pings POST /attendance/heartbeat every 30s while active. The backend stitches
- *   consecutive heartbeats into a single attendance session.
- * - When the user goes idle (10 min of no input), stops pinging. The backend
- *   closes the session at the last heartbeat, so idle time doesn't accumulate.
- * - Exposes minutesWorked today for the top-bar timer.
- *
- * Intentionally a no-op when there's no auth token (the user is on the login
- * screen) — clocking only makes sense once the user is signed in.
- */
 export function useWorkClock(): WorkClock {
   const { token } = useApp();
   const [minutesToday, setMinutesToday] = useState(0);
-  const [isActive, setIsActive] = useState(true);
+  const [workdayLimitMinutes, setWorkdayLimitMinutes] = useState(DEFAULT_WORKDAY_LIMIT_MINUTES);
+  const [sessionStartedAt, setSessionStartedAt] = useState<string | null>(null);
+  const [isWorking, setIsWorking] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  // Refs for the latest activity timestamp and timers — refs avoid re-renders
-  // on every mouse move (which would be catastrophic for performance).
-  const lastActivityRef = useRef<number>(Date.now());
+  const startedByThisPageRef = useRef(false);
   const heartbeatTimerRef = useRef<number | null>(null);
   const refreshTimerRef = useRef<number | null>(null);
-  const idleCheckTimerRef = useRef<number | null>(null);
-
-  const markActivity = useCallback(() => {
-    lastActivityRef.current = Date.now();
-    // Don't setState on every event — the idleCheckTimer flips isActive when needed.
-  }, []);
 
   const refresh = useCallback(async () => {
     if (!token) return;
     try {
       const data = await attendanceApi.today(token);
-      setMinutesToday(data.minutesWorked);
+      const limit = data.workdayLimitMinutes ?? DEFAULT_WORKDAY_LIMIT_MINUTES;
+      const cappedMinutes = Math.min(data.minutesWorked, limit);
+      const canKeepRunning = Boolean(data.openSession) && startedByThisPageRef.current && cappedMinutes < limit;
+
+      setWorkdayLimitMinutes(limit);
+      setMinutesToday(cappedMinutes);
+      setIsWorking(canKeepRunning);
+      setSessionStartedAt(canKeepRunning ? data.openSession?.startedAt ?? null : null);
+      if (!canKeepRunning && (!data.openSession || cappedMinutes >= limit)) {
+        startedByThisPageRef.current = false;
+      }
     } catch {
-      // Swallow — the timer keeps showing the last known value.
+      // Keep the previous display if the network blips.
     }
   }, [token]);
 
-  const sendHeartbeat = useCallback(async () => {
+  const sendHeartbeat = useCallback(async (intent: 'start' | 'heartbeat' = 'heartbeat') => {
     if (!token) return;
-    const idle = Date.now() - lastActivityRef.current > IDLE_THRESHOLD_MS;
-    if (idle) return;
     setLoading(true);
     try {
-      await attendanceApi.heartbeat(token);
-      // Re-pull today's total so the displayed counter rolls forward in step.
+      const data = await attendanceApi.heartbeat(token, { intent });
+      if (data.active === false) {
+        startedByThisPageRef.current = false;
+        setIsWorking(false);
+      }
       await refresh();
     } catch {
-      // Network blip — try again next interval.
+      // Try again on the next tick.
     } finally {
       setLoading(false);
     }
   }, [token, refresh]);
 
-  // Wire up DOM activity listeners (passive for perf; we never preventDefault).
-  useEffect(() => {
-    ACTIVITY_EVENTS.forEach((ev) => window.addEventListener(ev, markActivity, { passive: true }));
-    return () => {
-      ACTIVITY_EVENTS.forEach((ev) => window.removeEventListener(ev, markActivity));
-    };
-  }, [markActivity]);
+  const startWork = useCallback(async () => {
+    if (minutesToday >= workdayLimitMinutes) return;
+    startedByThisPageRef.current = true;
+    await sendHeartbeat('start');
+  }, [minutesToday, sendHeartbeat, workdayLimitMinutes]);
 
-  // Heartbeat loop — only runs while we have a token. Also fires immediately
-  // on mount so a fresh login starts a session right away.
   useEffect(() => {
-    if (!token) return;
-    void sendHeartbeat();
+    if (!token || !isWorking) return;
     heartbeatTimerRef.current = window.setInterval(() => void sendHeartbeat(), HEARTBEAT_INTERVAL_MS);
     return () => {
       if (heartbeatTimerRef.current !== null) {
@@ -105,10 +80,8 @@ export function useWorkClock(): WorkClock {
         heartbeatTimerRef.current = null;
       }
     };
-  }, [token, sendHeartbeat]);
+  }, [token, isWorking, sendHeartbeat]);
 
-  // Independent refresh loop so the counter stays current even when the user is
-  // idle (handy for showing "you worked 4h 12m today" on a stale tab).
   useEffect(() => {
     if (!token) return;
     void refresh();
@@ -121,20 +94,23 @@ export function useWorkClock(): WorkClock {
     };
   }, [token, refresh]);
 
-  // Idle detector — checks once per second, flips `isActive` when the gap since
-  // last activity crosses the threshold (either direction). Cheap and reliable.
   useEffect(() => {
-    idleCheckTimerRef.current = window.setInterval(() => {
-      const idleNow = Date.now() - lastActivityRef.current > IDLE_THRESHOLD_MS;
-      setIsActive((prev) => (prev === !idleNow ? prev : !idleNow));
-    }, 1000);
-    return () => {
-      if (idleCheckTimerRef.current !== null) {
-        window.clearInterval(idleCheckTimerRef.current);
-        idleCheckTimerRef.current = null;
-      }
-    };
-  }, []);
+    if (token) return;
+    startedByThisPageRef.current = false;
+    setMinutesToday(0);
+    setWorkdayLimitMinutes(DEFAULT_WORKDAY_LIMIT_MINUTES);
+    setSessionStartedAt(null);
+    setIsWorking(false);
+  }, [token]);
 
-  return { minutesToday, isActive, loading, refresh };
+  return {
+    minutesToday,
+    workdayLimitMinutes,
+    sessionStartedAt,
+    isWorking,
+    dailyLimitReached: minutesToday >= workdayLimitMinutes,
+    loading,
+    refresh,
+    startWork,
+  };
 }

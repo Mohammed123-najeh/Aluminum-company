@@ -93,6 +93,13 @@ export type ApiUser = {
   status: 'active' | 'suspended';
   lastLogin?: string | null;
   createdAt: string;
+  employeeNumber?: string | null;
+  nationality?: string | null;
+  phone?: string | null;
+  hireDate?: string | null;
+  contractType?: string | null;
+  contractDuration?: string | null;
+  department?: string | null;
 };
 
 export type LoginResponse = { token: string; user: ApiUser };
@@ -649,6 +656,10 @@ export type ApiOrderItem = {
   notes?: string | null;
   unitPrice?: number | null;
   lineTotal?: number | null;
+  isCancelled?: boolean;
+  cancelledAmount?: number;
+  cancelledAt?: string | null;
+  cancellationReason?: string | null;
 };
 
 export type ApiChequeDetails = {
@@ -686,6 +697,13 @@ export type ApiOrder = {
   balanceDue?: number | null;
   currency?: string;
   receiptNumber?: string | null;
+  cancellationType?: 'full' | 'partial' | null;
+  cancelledAt?: string | null;
+  cancelledById?: string | null;
+  cancelledByName?: string | null;
+  cancellationReason?: string | null;
+  cancelledAmount?: number;
+  refundedAmount?: number;
   clientId?: string | null;
   clientName?: string | null;
   clientPhone?: string | null;
@@ -770,6 +788,12 @@ export type UpdateOrderPayload = {
   customer_reference?: string | null;
   status?: string;
   items?: CreateOrderPayload['items'];
+};
+
+export type CancelOrderPayload = {
+  type: 'full' | 'partial';
+  item_ids?: string[];
+  reason?: string | null;
 };
 
 // ── AI (OpenAI via Laravel — key stays on server) ────────────────────────────
@@ -886,6 +910,8 @@ export const ordersApi = {
   ) => request<ApiOrder & { lastPayment?: ApiOrderPayment }>('POST', `/orders/${id}/payments`, body, token),
   updateReceiptMeta: (id: string, token: string, body: { customer_reference?: string | null }) =>
     request<ApiOrder>('PATCH', `/orders/${id}/receipt-meta`, body, token),
+  cancel: (id: string, payload: CancelOrderPayload, token: string) =>
+    request<ApiOrder>('POST', `/orders/${id}/cancel`, payload, token),
 };
 
 // ── Clients (supervisor) ────────────────────────────────────────────────────
@@ -1516,14 +1542,19 @@ export type ApiPayrollSummary = {
 };
 
 export type ApiAttendanceHeartbeat = {
-  sessionId: string;
-  sessionStartedAt: string;
-  minutesInSession: number;
-  continued: boolean;
+  active?: boolean;
+  workdayLimitMinutes?: number;
+  sessionId?: string;
+  sessionStartedAt?: string;
+  minutesInSession?: number;
+  continued?: boolean;
+  minutesWorked?: number;
+  openSession?: null;
 };
 
 export type ApiAttendanceToday = {
   date: string;
+  workdayLimitMinutes?: number;
   minutesWorked: number;
   openSession: {
     id: string;
@@ -1549,8 +1580,8 @@ export const attendanceApi = {
     const suffix = qs.toString() ? `?${qs.toString()}` : '';
     return request<ApiPayrollSummary>('GET', `/attendance/summary${suffix}`, undefined, token);
   },
-  heartbeat: (token: string) =>
-    request<ApiAttendanceHeartbeat>('POST', '/attendance/heartbeat', {}, token),
+  heartbeat: (token: string, body: { intent?: 'start' | 'heartbeat' } = {}) =>
+    request<ApiAttendanceHeartbeat>('POST', '/attendance/heartbeat', body, token),
   today: (token: string) =>
     request<ApiAttendanceToday>('GET', '/attendance/today', undefined, token),
 };

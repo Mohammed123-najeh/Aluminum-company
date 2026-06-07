@@ -15,6 +15,11 @@ class OrderItem extends Model
         'notes',
         'unit_price',
         'line_total',
+        'is_cancelled',
+        'cancelled_amount',
+        'cancelled_at',
+        'cancelled_by',
+        'cancellation_reason',
     ];
 
     protected function casts(): array
@@ -23,6 +28,9 @@ class OrderItem extends Model
             'quantity' => 'integer',
             'unit_price' => 'decimal:4',
             'line_total' => 'decimal:2',
+            'is_cancelled' => 'boolean',
+            'cancelled_amount' => 'decimal:2',
+            'cancelled_at' => 'datetime',
         ];
     }
 
@@ -39,5 +47,10 @@ class OrderItem extends Model
     public function color(): BelongsTo
     {
         return $this->belongsTo(Color::class, 'color_code', 'color_code');
+    }
+
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
     }
 }

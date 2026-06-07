@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\AB\\\\OneDrive\\\\Desktop\\\\ALumnuim_project\" -Force)",
+      "Bash(Select-Object Name, BaseName, PSIsContainer)",
+      "Bash(php artisan *)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://127.0.0.1:8001)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:5175)",
+      "Bash(Get-ChildItem \"C:\\\\Users\\\\AB\\\\OneDrive\\\\Desktop\\\\ALumnuim_project\" -Directory)",
+      "Bash(Select-Object Name)"
+    ]
+  }
+}

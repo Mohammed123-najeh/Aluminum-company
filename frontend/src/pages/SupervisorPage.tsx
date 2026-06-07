@@ -20,6 +20,7 @@ import { SectionPanel } from '../components/SectionPanel';
 import { AiAssistantPanel } from '../components/ai/AiAssistantPanel';
 import { NotificationBell } from '../components/notifications/NotificationBell';
 import { WorkClockBadge } from '../components/shared/WorkClockBadge';
+import { BrandLogo } from '../components/shared/BrandLogo';
 import { NotificationsPanel } from '../components/notifications/NotificationsPanel';
 import { useNotifications } from '../hooks/useNotifications';
 
@@ -81,7 +82,7 @@ export const SupervisorPage: React.FC<Props> = ({ onLogout, initialAiShareToken,
   const [selectedReceiverId, setSelectedReceiverId] = useState<string | null>(null);
   const messages = useMessages(selectedReceiverId);
   const { tasks, loading: tasksLoading, error: tasksError, createTask, updateTask, deleteTask, cancelTask, refetch: refetchTasks } = useTasks();
-  const { orders, loading: ordersLoading, error: ordersError } = useOrders();
+  const { orders, loading: ordersLoading, error: ordersError, cancelOrder } = useOrders();
 
   const initials = adminProfile.name
     .split(' ')
@@ -101,14 +102,8 @@ export const SupervisorPage: React.FC<Props> = ({ onLogout, initialAiShareToken,
     <div className="flex h-screen overflow-hidden bg-slate-100 dark:bg-slate-950">
       {/* Sidebar */}
       <aside className="flex w-60 shrink-0 flex-col bg-slate-900 dark:bg-slate-950">
-        <div className="flex items-center gap-3 border-b border-slate-800 px-5 py-4">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-400 to-blue-600 shadow-lg shadow-indigo-500/30">
-            <span className="text-[11px] font-black tracking-tight text-white">AF</span>
-          </div>
-          <div>
-            <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-500">{t('aluminumFactory')}</p>
-            <p className="text-sm font-semibold leading-tight text-white">{t('supervisorPanel')}</p>
-          </div>
+        <div className="border-b border-slate-800 px-5 py-4">
+          <BrandLogo panelLabel={t('supervisorPanel')} />
         </div>
 
         <nav className="flex-1 space-y-1 px-3 py-4">
@@ -369,7 +364,7 @@ export const SupervisorPage: React.FC<Props> = ({ onLogout, initialAiShareToken,
             <SupervisorAnalytics employees={employees} tasks={tasks} loading={tasksLoading} error={tasksError} />
           </SectionPanel>
           <SectionPanel active={section === 'orders'}>
-            <SupervisorOrders orders={orders} loading={ordersLoading} error={ordersError} />
+            <SupervisorOrders orders={orders} loading={ordersLoading} error={ordersError} cancelOrder={cancelOrder} />
           </SectionPanel>
           <SectionPanel active={section === 'receipts'}>
             <div className="max-w-4xl space-y-4">

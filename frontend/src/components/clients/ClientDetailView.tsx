@@ -11,10 +11,18 @@ import { formatIls } from '../../utils/currency';
 type Props = {
   detail: ApiClientDetailResponse | null;
   loading?: boolean;
+  dateFilter?: ClientDateFilter;
   /** When true, render a "Back to list" button (useful on small screens where the list collapses). */
   showBack?: boolean;
   onBack?: () => void;
 };
+
+export type ClientDateFilter =
+  | { mode: 'all' }
+  | { mode: 'today' }
+  | { mode: 'month'; month: string }
+  | { mode: 'year'; year: string }
+  | { mode: 'exact'; date: string };
 
 function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -36,6 +44,38 @@ function formatDateTime(value: string | null | undefined): string {
   } catch {
     return '—';
   }
+}
+
+function matchesClientDateFilter(value: string | null | undefined, filter: ClientDateFilter): boolean {
+  if (filter.mode === 'all') return true;
+  if (!value) return false;
+  let day = '';
+  try {
+    day = new Date(value).toISOString().slice(0, 10);
+  } catch {
+    return false;
+  }
+  if (filter.mode === 'today') {
+    return day === new Date().toISOString().slice(0, 10);
+  }
+  if (filter.mode === 'month') {
+    return filter.month ? day.startsWith(filter.month) : true;
+  }
+  if (filter.mode === 'year') {
+    return filter.year ? day.startsWith(filter.year) : true;
+  }
+  if (filter.mode === 'exact') {
+    return filter.date ? day === filter.date : true;
+  }
+  return true;
+}
+
+function clientFilterLabel(filter: ClientDateFilter, isAr: boolean): string {
+  if (filter.mode === 'all') return isAr ? 'كل الفترات' : 'All time';
+  if (filter.mode === 'today') return isAr ? 'اليوم' : 'Today';
+  if (filter.mode === 'month') return filter.month || (isAr ? 'الشهر' : 'Month');
+  if (filter.mode === 'year') return filter.year || (isAr ? 'السنة' : 'Year');
+  return filter.date || (isAr ? 'تاريخ محدد' : 'Exact date');
 }
 
 function initials(name: string): string {
@@ -282,18 +322,28 @@ function StatCard({
   );
 }
 
-export const ClientDetailView: React.FC<Props> = ({ detail, loading, showBack, onBack }) => {
-  const { t } = useApp();
+export const ClientDetailView: React.FC<Props> = ({ detail, loading, dateFilter = { mode: 'all' }, showBack, onBack }) => {
+  const { t, lang } = useApp();
+  const isAr = lang === 'ar';
   const [filter, setFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
   const [copied, setCopied] = useState(false);
 
-  const filteredOrders = useMemo(() => {
+  const ordersInDateRange = useMemo(() => {
     if (!detail) return [];
-    if (filter === 'paid') return detail.orders.filter((o) => o.paymentStatus === 'paid');
+    return detail.orders.filter((o) => matchesClientDateFilter(o.createdAt || o.updatedAt, dateFilter));
+  }, [detail, dateFilter]);
+
+  const tasksInDateRange = useMemo(() => {
+    if (!detail?.tasks) return [];
+    return detail.tasks.filter((task) => matchesClientDateFilter(task.createdAt || task.updatedAt || task.dueDate, dateFilter));
+  }, [detail, dateFilter]);
+
+  const filteredOrders = useMemo(() => {
+    if (filter === 'paid') return ordersInDateRange.filter((o) => o.paymentStatus === 'paid');
     if (filter === 'unpaid')
-      return detail.orders.filter((o) => o.paymentStatus === 'partial' || o.paymentStatus === 'unpaid');
-    return detail.orders;
-  }, [detail, filter]);
+      return ordersInDateRange.filter((o) => o.paymentStatus === 'partial' || o.paymentStatus === 'unpaid');
+    return ordersInDateRange;
+  }, [filter, ordersInDateRange]);
 
   if (loading) {
     return (
@@ -318,7 +368,33 @@ export const ClientDetailView: React.FC<Props> = ({ detail, loading, showBack, o
     );
   }
 
-  const { client, analytics, orders } = detail;
+  const { client } = detail;
+
+  const analytics = useMemo(() => {
+    const activeOrders = ordersInDateRange.filter((o) => o.status !== 'cancelled');
+    const totalPurchases = activeOrders.reduce((sum, o) => sum + (o.totalAmount ?? 0), 0);
+    const totalPaid = activeOrders.reduce((sum, o) => sum + (o.amountPaid ?? 0), 0);
+    const balanceDue = Math.max(0, totalPurchases - totalPaid);
+    const unitsPurchased = activeOrders
+      .flatMap((o) => o.items)
+      .reduce((sum, item) => sum + (item.quantity ?? 0), 0);
+    const lastOrder = [...ordersInDateRange].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
+    const payments = ordersInDateRange
+      .flatMap((o) => o.payments)
+      .filter((p) => matchesClientDateFilter(p.paidAt || p.createdAt, dateFilter))
+      .sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime());
+
+    return {
+      orderCount: activeOrders.length,
+      totalOrderCount: ordersInDateRange.length,
+      totalPurchases: Math.round(totalPurchases * 100) / 100,
+      totalPaid: Math.round(totalPaid * 100) / 100,
+      balanceDue: Math.round(balanceDue * 100) / 100,
+      unitsPurchased,
+      lastOrderAt: lastOrder?.updatedAt ?? null,
+      lastPaymentAt: payments[0]?.paidAt ?? null,
+    };
+  }, [dateFilter, ordersInDateRange]);
 
   const handlePrint = () => {
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${escHtml(client.name)}</title><style>
@@ -346,7 +422,7 @@ export const ClientDetailView: React.FC<Props> = ({ detail, loading, showBack, o
         <div class="kpi"><p class="label">${escHtml(t('clientBalanceDue'))}</p><p class="value">${escHtml(formatIls(analytics.balanceDue))}</p></div>
       </div>
       <h2>${escHtml(t('clientAllOrders'))}</h2>
-      ${orders
+      ${ordersInDateRange
         .map(
           (o) => `
         <h3>${escHtml(o.receiptNumber ?? '#' + o.id.slice(0, 8))} — ${escHtml(formatDate(o.createdAt))} — ${escHtml(formatIls(o.totalAmount ?? 0))} (${escHtml(o.paymentStatus)})</h3>
@@ -477,10 +553,15 @@ export const ClientDetailView: React.FC<Props> = ({ detail, loading, showBack, o
       {/* Orders list */}
       <section>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-            {t('clientAllOrders')}{' '}
-            <span className="ms-1 text-sm font-normal text-slate-500">({orders.length})</span>
-          </h3>
+          <div>
+            <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+              {t('clientAllOrders')}{' '}
+              <span className="ms-1 text-sm font-normal text-slate-500">({ordersInDateRange.length})</span>
+            </h3>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              {isAr ? 'الفترة' : 'Period'}: {clientFilterLabel(dateFilter, isAr)}
+            </p>
+          </div>
           <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs font-semibold dark:border-slate-700 dark:bg-slate-800">
             {(['all', 'paid', 'unpaid'] as const).map((f) => (
               <button
@@ -520,10 +601,10 @@ export const ClientDetailView: React.FC<Props> = ({ detail, loading, showBack, o
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
             {t('clientTasksSectionTitle')}{' '}
-            <span className="ms-1 text-sm font-normal text-slate-500">({detail.tasks?.length ?? 0})</span>
+            <span className="ms-1 text-sm font-normal text-slate-500">({tasksInDateRange.length})</span>
           </h3>
         </div>
-        {!detail.tasks || detail.tasks.length === 0 ? (
+        {tasksInDateRange.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800/40 dark:text-slate-400">
             {t('clientTasksEmpty')}
           </div>
@@ -543,7 +624,7 @@ export const ClientDetailView: React.FC<Props> = ({ detail, loading, showBack, o
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                  {detail.tasks.map((tk) => (
+                  {tasksInDateRange.map((tk) => (
                     <tr key={tk.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-700/40">
                       <td className="px-4 py-2.5 font-medium text-slate-900 dark:text-slate-100">{tk.title}</td>
                       <td className="px-4 py-2.5">

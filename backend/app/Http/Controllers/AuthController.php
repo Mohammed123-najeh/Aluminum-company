@@ -9,6 +9,35 @@ use Illuminate\Support\Facades\Hash;
 
 class AuthController extends Controller
 {
+    private const WORKDAY_LIMIT_MINUTES = 8 * 60;
+
+    private function closeOpenAttendanceSession($user): void
+    {
+        $open = AttendanceLog::where('user_id', $user->id)
+            ->whereNull('clock_out_at')
+            ->orderByDesc('clock_in_at')
+            ->first();
+
+        if (!$open) {
+            return;
+        }
+
+        $closeAt = $open->last_heartbeat_at ?? $open->clock_in_at;
+        $limitAt = $open->clock_in_at->copy()->addMinutes(self::WORKDAY_LIMIT_MINUTES);
+        $effectiveClose = $closeAt->copy()->min($limitAt);
+
+        if ($effectiveClose->lt($open->clock_in_at)) {
+            $effectiveClose = $open->clock_in_at->copy();
+        }
+
+        $open->clock_out_at = $effectiveClose;
+        $open->minutes_worked = min(
+            self::WORKDAY_LIMIT_MINUTES,
+            max(0, (int) $open->clock_in_at->diffInMinutes($effectiveClose))
+        );
+        $open->save();
+    }
+
     public function login(Request $request)
     {
         $request->validate([
@@ -28,9 +57,10 @@ class AuthController extends Controller
 
         // Revoke all existing tokens for this user
         $user->tokens()->delete();
+        $this->closeOpenAttendanceSession($user);
 
-        // Record login time (attendance sessions are now driven by activity
-        // heartbeats, not login/logout — so we no longer open or close shifts here).
+        // Record login time. Attendance sessions start only after the user
+        // explicitly confirms "start work" from the dashboard.
         $user->last_login_at = now();
         $user->save();
 
@@ -50,16 +80,7 @@ class AuthController extends Controller
         // we don't count idle/post-activity time. The heartbeat stitcher would
         // eventually close this anyway, but doing it here keeps reports clean
         // when the user explicitly signs out.
-        $open = AttendanceLog::where('user_id', $user->id)
-            ->whereNull('clock_out_at')
-            ->orderByDesc('clock_in_at')
-            ->first();
-        if ($open) {
-            $closeAt = $open->last_heartbeat_at ?? $open->clock_in_at;
-            $open->clock_out_at = $closeAt;
-            $open->minutes_worked = max(0, (int) $open->clock_in_at->diffInMinutes($closeAt));
-            $open->save();
-        }
+        $this->closeOpenAttendanceSession($user);
 
         $user->currentAccessToken()->delete();
         return response()->json(['message' => 'Logged out']);

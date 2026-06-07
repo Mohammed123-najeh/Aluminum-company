@@ -12,6 +12,13 @@ export interface User {
   hourlyRate?: string | null;
   annualLeaveBalance?: string | null;
   supervisorId?: string | null;
+  employeeNumber?: string | null;
+  nationality?: string | null;
+  phone?: string | null;
+  hireDate?: string | null;
+  contractType?: string | null;
+  contractDuration?: string | null;
+  department?: string | null;
   status: UserStatus;
   lastLogin?: string | null;
   createdAt: string;

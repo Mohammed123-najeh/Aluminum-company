@@ -14,6 +14,7 @@ import { AdminFinancialAnalytics } from '../components/admin/AdminFinancialAnaly
 import { AdminPayrollPanel } from '../components/admin/AdminPayrollPanel';
 import { NotificationBell } from '../components/notifications/NotificationBell';
 import { WorkClockBadge } from '../components/shared/WorkClockBadge';
+import { BrandLogo } from '../components/shared/BrandLogo';
 import { NotificationsPanel } from '../components/notifications/NotificationsPanel';
 import { useNotifications } from '../hooks/useNotifications';
 import { useMessages } from '../hooks/useMessages';
@@ -116,14 +117,8 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
       {/* ── Sidebar ── */}
       <aside className="flex w-60 shrink-0 flex-col bg-slate-900 dark:bg-slate-950">
         {/* Logo */}
-        <div className="flex items-center gap-3 border-b border-slate-800 px-5 py-4">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-400 to-blue-600 shadow-lg shadow-indigo-500/30">
-            <span className="text-[11px] font-black tracking-tight text-white">AF</span>
-          </div>
-          <div>
-            <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-500">{t('aluminumFactory')}</p>
-            <p className="text-sm font-semibold text-white leading-tight">{t('adminPanel')}</p>
-          </div>
+        <div className="border-b border-slate-800 px-5 py-4">
+          <BrandLogo panelLabel={t('adminPanel')} />
         </div>
 
         {/* Nav — scroll so Settings / Logout at bottom stay reachable on short screens */}
@@ -286,8 +281,9 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
       {/* ── Main ── */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
-        <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div>
+        <header className="border-b border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex flex-col gap-3 px-6 py-3.5 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
             <h1 className="text-base font-semibold text-slate-900 dark:text-slate-100">
               {view === 'users' && t('userManagement')}
               {view === 'orgchart' && t('orgChart')}
@@ -305,7 +301,7 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <WorkClockBadge />
             <NotificationBell
               state={notif}
@@ -328,7 +324,7 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
               <span className="hidden sm:inline">{t('logout')}</span>
             </button>
             {/* Tab switcher */}
-            <div className="hidden sm:flex rounded-lg border border-slate-200 bg-slate-50 p-1 gap-0.5 dark:border-slate-700 dark:bg-slate-800">
+            <div className="hidden">
               <button
                 type="button"
                 onClick={() => goView('users')}
@@ -422,8 +418,8 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
             {/* Dark mode toggle */}
             <button
               onClick={toggleTheme}
-              title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
-              className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-100"
+              title={theme === 'dark' ? t('lightMode') : t('darkMode')}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-100"
             >
               {theme === 'dark' ? (
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
@@ -439,13 +435,27 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
             {/* Create Account */}
             <button
               onClick={() => setShowCreate(true)}
-              className={`inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-indigo-500 to-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/25 transition hover:from-indigo-400 hover:to-blue-500 ${view === 'assistant' || view === 'notifications' || view === 'messages' || view === 'analytics' || view === 'financial' || view === 'payroll' ? 'hidden' : ''}`}
+              className={`inline-flex h-10 items-center gap-2 rounded-lg bg-gradient-to-r from-indigo-500 to-blue-600 px-4 text-sm font-semibold text-white shadow-md shadow-indigo-500/25 transition hover:from-indigo-400 hover:to-blue-500 ${view === 'assistant' || view === 'notifications' || view === 'messages' || view === 'analytics' || view === 'financial' || view === 'payroll' ? 'hidden' : ''}`}
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
               </svg>
-              {t('createAccount')}
+              <span className="hidden sm:inline">{t('createAccount')}</span>
             </button>
+          </div>
+          </div>
+
+          <div className="border-t border-slate-100 px-6 py-2 dark:border-slate-800">
+            <div className="flex max-w-full gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800">
+              <button type="button" onClick={() => goView('users')} className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition ${view === 'users' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>{t('users')}</button>
+              <button type="button" onClick={() => goView('orgchart')} className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition ${view === 'orgchart' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>{t('orgChart')}</button>
+              <button type="button" onClick={() => goView('analytics')} className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition ${view === 'analytics' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>{t('adminAnalytics')}</button>
+              <button type="button" onClick={() => goView('financial')} className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition ${view === 'financial' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>{t('adminProfitReceiptsNav')}</button>
+              <button type="button" onClick={() => goView('payroll')} className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition ${view === 'payroll' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>{t('adminPayrollNav')}</button>
+              <button type="button" onClick={() => goView('messages')} className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition ${view === 'messages' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>{t('messages')}</button>
+              <button type="button" onClick={() => goView('assistant')} className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition ${view === 'assistant' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>{t('aiAssistantNav')}</button>
+              <button type="button" onClick={() => goView('notifications')} className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition ${view === 'notifications' ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>{t('notificationsNav')}</button>
+            </div>
           </div>
         </header>
 

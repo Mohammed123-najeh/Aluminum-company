@@ -15,7 +15,8 @@ type Props = {
 };
 
 export const FinanceOverviewTab: React.FC<Props> = ({ onViewAllOrders }) => {
-  const { token, t } = useApp();
+  const { token, t, lang } = useApp();
+  const isAr = lang === 'ar';
   const [data, setData] = useState<ApiFinanceDashboard | null>(null);
   const [orders, setOrders] = useState<ApiOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,13 +56,17 @@ export const FinanceOverviewTab: React.FC<Props> = ({ onViewAllOrders }) => {
     const total = o.totalAmount ?? 0;
     const paid = o.amountPaid ?? 0;
     const remaining = Math.max(0, total - paid);
+    const isCancelled = Boolean(o.cancellationType || o.status === 'cancelled');
     const statusTone: 'green' | 'amber' | 'rose' | 'slate' =
-      o.paymentStatus === 'paid' ? 'green'
+      isCancelled ? 'rose'
+      : o.paymentStatus === 'paid' ? 'green'
       : o.paymentStatus === 'partial' ? 'amber'
       : o.paymentStatus === 'unpaid' ? 'rose'
       : 'slate';
     const statusLabel =
-      o.paymentStatus === 'paid' ? t('fin.overview.statusPaid')
+      o.cancellationType === 'full' || o.status === 'cancelled' ? (isAr ? 'ملغي كامل' : 'Fully cancelled')
+      : o.cancellationType === 'partial' ? (isAr ? 'ملغي جزئياً' : 'Partially cancelled')
+      : o.paymentStatus === 'paid' ? t('fin.overview.statusPaid')
       : o.paymentStatus === 'partial' ? t('fin.overview.statusPartial')
       : o.paymentStatus === 'unpaid' ? t('fin.overview.statusUnpaid')
       : t('fin.overview.statusUnknown');
@@ -74,6 +79,7 @@ export const FinanceOverviewTab: React.FC<Props> = ({ onViewAllOrders }) => {
       remaining,
       statusTone,
       statusLabel,
+      isCancelled,
     };
   });
 
@@ -163,7 +169,7 @@ export const FinanceOverviewTab: React.FC<Props> = ({ onViewAllOrders }) => {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                 {orderRows.map((r) => (
-                  <tr key={r.id} className="text-slate-700 dark:text-slate-300">
+                  <tr key={r.id} className={`${r.isCancelled ? 'bg-rose-50/70 text-rose-900 dark:bg-rose-950/20 dark:text-rose-100' : 'text-slate-700 dark:text-slate-300'}`}>
                     <td className="py-3 font-semibold text-slate-900 dark:text-slate-100">{r.number}</td>
                     <td className="py-3">{r.customer}</td>
                     <td className="py-3 text-end tabular-nums">{formatIls(r.total)}</td>

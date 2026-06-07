@@ -1,5 +1,6 @@
 import React from 'react';
 import { LoginForm } from './components/LoginForm';
+import { BrandFullLogo } from './components/shared/BrandLogo';
 import { useApp } from './contexts/AppContext';
 
 type Props = { onLoginSuccess?: () => void };
@@ -64,20 +65,10 @@ export const LoginPage: React.FC<Props> = ({ onLoginSuccess }) => {
             </div>
 
             <header className="relative flex flex-col items-center text-center">
-              <div className="h-32 w-32 overflow-hidden rounded-full bg-white/5 shadow-xl ring-2 ring-white/10 drop-shadow-lg lg:h-44 lg:w-44">
-                <img
-                  src="/logo.png"
-                  alt={t('companyNameEn')}
-                  className="h-full w-full object-cover object-center"
-                />
+              <div className="w-full rounded-2xl bg-white/95 px-5 pb-5 pt-4 shadow-2xl shadow-black/25 ring-1 ring-white/30">
+                <BrandFullLogo />
               </div>
-              <div className="mt-3 space-y-0.5">
-                <p className="text-base font-semibold tracking-tight text-slate-100">
-                  {t('companyNameEn')}
-                </p>
-                <p className="text-sm text-slate-400" dir="rtl">
-                  {t('companyNameAr')}
-                </p>
+              <div className="mt-4 space-y-0.5">
                 <p className="text-[10px] uppercase tracking-[0.2em] text-amber-400/90 pt-1">
                   {t('adminPanel')}
                 </p>
@@ -113,25 +104,11 @@ export const LoginPage: React.FC<Props> = ({ onLoginSuccess }) => {
           <section className="flex w-full flex-1 items-center justify-center px-6 py-10 sm:px-10">
             <div className="w-full max-w-md">
               {/* Mobile header */}
-              <div className="mb-6 flex items-center justify-between gap-3 lg:hidden">
-                <div className="flex min-w-0 flex-1 items-center gap-3">
-                  <div className="h-14 w-14 shrink-0 overflow-hidden rounded-full bg-white/10 ring-2 ring-slate-200/50 dark:ring-slate-600/50">
-                    <img
-                      src="/logo.png"
-                      alt={t('companyNameEn')}
-                      className="h-full w-full object-cover object-center"
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
-                      {t('companyNameEn')}
-                    </p>
-                    <p className="truncate text-[10px] text-slate-500 dark:text-slate-400" dir="rtl">
-                      {t('companyNameAr')}
-                    </p>
-                  </div>
+              <div className="mb-6 flex flex-col items-center gap-3 lg:hidden">
+                <div className="w-full rounded-2xl bg-white/95 px-4 pb-4 pt-3 shadow-lg shadow-slate-900/10 ring-1 ring-slate-200/80 dark:ring-slate-700/80">
+                  <BrandFullLogo compact />
                 </div>
-                <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
                   {t('secureAccess')}
                 </span>
               </div>

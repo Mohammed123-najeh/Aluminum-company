@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { User, CreateUserInput, UpdateUserInput, EmployeeType } from '../../types/user';
 import { useApp } from '../../contexts/AppContext';
 
@@ -31,6 +31,10 @@ const Field: React.FC<{label:string;required?:boolean;error?:string;children:Rea
 export const UserModal: React.FC<Props> = ({ users, editUser, onCreate, onUpdate, onClose }) => {
   const { t } = useApp();
   const isEdit = Boolean(editUser);
+  const nameRef = useRef<HTMLInputElement | null>(null);
+  const emailRef = useRef<HTMLInputElement | null>(null);
+  const passwordRef = useRef<HTMLInputElement | null>(null);
+  const manualInputRef = useRef(false);
 
   const [name, setName] = useState(editUser?.name ?? '');
   const [email, setEmail] = useState(editUser?.email ?? '');
@@ -59,6 +63,28 @@ export const UserModal: React.FC<Props> = ({ users, editUser, onCreate, onUpdate
     setAnnualLeave(editUser?.annualLeaveBalance != null ? String(editUser.annualLeaveBalance) : '');
   }, [editUser]);
 
+  useEffect(() => {
+    if (isEdit) return;
+
+    const clearAutofill = () => {
+      if (manualInputRef.current) return;
+      setName('');
+      setEmail('');
+      setPassword('');
+      if (nameRef.current) nameRef.current.value = '';
+      if (emailRef.current) emailRef.current.value = '';
+      if (passwordRef.current) passwordRef.current.value = '';
+    };
+
+    clearAutofill();
+    const timers = [50, 250, 750].map((delay) => window.setTimeout(clearAutofill, delay));
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [isEdit]);
+
+  const markManualInput = () => {
+    manualInputRef.current = true;
+  };
+
   const validate = () => {
     const e: Record<string,string> = {};
     if (!name.trim()) e.name = t('fullName') + ' required';
@@ -67,6 +93,14 @@ export const UserModal: React.FC<Props> = ({ users, editUser, onCreate, onUpdate
     if (users.some(u=>u.email.toLowerCase()===email.toLowerCase()&&u.id!==editUser?.id)) e.email = 'Email already in use';
     if (!isEdit && !password) e.password = t('minPassword');
     if (!isEdit && password && password.length<8) e.password = t('minPassword');
+    if (hourlyRateStr.trim() !== '') {
+      const hourlyRate = Number(hourlyRateStr);
+      if (!Number.isFinite(hourlyRate) || hourlyRate < 0) e.hourlyRate = 'Invalid hourly rate';
+    }
+    if (role === 'employee' && annualLeave.trim() !== '') {
+      const leaveBalance = Number(annualLeave);
+      if (!Number.isFinite(leaveBalance) || leaveBalance < 0) e.annualLeave = 'Invalid annual leave';
+    }
     return e;
   };
 
@@ -74,13 +108,12 @@ export const UserModal: React.FC<Props> = ({ users, editUser, onCreate, onUpdate
     e.preventDefault();
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); return; }
-    const comp =
-      role === 'employee'
-        ? {
-            hourlyRate: hourlyRateStr.trim() === '' ? null : Number(hourlyRateStr),
-            annualLeaveBalance: annualLeave.trim() === '' ? null : Number(annualLeave),
-          }
-        : {};
+    const comp = {
+      hourlyRate: hourlyRateStr.trim() === '' ? null : Number(hourlyRateStr),
+      ...(role === 'employee'
+        ? { annualLeaveBalance: annualLeave.trim() === '' ? null : Number(annualLeave) }
+        : {}),
+    };
 
     if (isEdit) {
       onUpdate({
@@ -131,7 +164,13 @@ export const UserModal: React.FC<Props> = ({ users, editUser, onCreate, onUpdate
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+        <form
+          onSubmit={handleSubmit}
+          className="flex min-h-0 flex-1 flex-col"
+          autoComplete="off"
+          data-lpignore="true"
+          data-1p-ignore="true"
+        >
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5 space-y-4">
           {/* Role selector */}
           <div className="grid grid-cols-2 gap-3">
@@ -145,18 +184,55 @@ export const UserModal: React.FC<Props> = ({ users, editUser, onCreate, onUpdate
           </div>
 
           <Field label={t('fullName')} required error={errors.name}>
-            <input type="text" value={name} onChange={e=>setName(e.target.value)} placeholder={t('namePlaceholder')} className={inputCls}/>
+            <input
+              ref={nameRef}
+              type="text"
+              name="new_staff_full_name"
+              value={name}
+              onPointerDown={markManualInput}
+              onKeyDown={markManualInput}
+              onPaste={markManualInput}
+              onChange={e=>setName(e.target.value)}
+              placeholder={t('namePlaceholder')}
+              autoComplete="off"
+              className={inputCls}
+            />
           </Field>
 
           <Field label={t('emailAddress')} required error={errors.email}>
-            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder={t('emailPlaceholder')} className={inputCls}/>
+            <input
+              ref={emailRef}
+              type="email"
+              name="new_staff_contact"
+              value={email}
+              onPointerDown={markManualInput}
+              onKeyDown={markManualInput}
+              onPaste={markManualInput}
+              onChange={e=>setEmail(e.target.value)}
+              placeholder={t('emailPlaceholder')}
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              className={inputCls}
+            />
           </Field>
 
           {!isEdit && (
             <Field label={t('password')} required error={errors.password}>
               <div className="flex overflow-hidden rounded-lg border border-slate-200 bg-slate-50 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-400/20 transition dark:border-slate-600 dark:bg-slate-700">
-                <input type={showPw?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder={t('minPassword')}
-                  className="flex-1 bg-transparent px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 outline-none dark:text-slate-100"/>
+                <input
+                  ref={passwordRef}
+                  type={showPw?'text':'password'}
+                  name="new_staff_secret"
+                  value={password}
+                  onPointerDown={markManualInput}
+                  onKeyDown={markManualInput}
+                  onPaste={markManualInput}
+                  onChange={e=>setPassword(e.target.value)}
+                  placeholder={t('minPassword')}
+                  autoComplete="new-password"
+                  className="flex-1 bg-transparent px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 outline-none dark:text-slate-100"
+                />
                 <button type="button" onClick={()=>setShowPw(p=>!p)} className="px-3 text-xs font-medium text-slate-400 hover:text-slate-700 transition dark:hover:text-slate-200">
                   {showPw?'Hide':'Show'}
                 </button>
@@ -165,15 +241,29 @@ export const UserModal: React.FC<Props> = ({ users, editUser, onCreate, onUpdate
           )}
 
           {role === 'supervisor' && (
-            <Field label={t('mainJob')}>
-              <input
-                type="text"
-                value={mainJob}
-                onChange={e => setMainJob(e.target.value)}
-                placeholder={t('mainJobPlaceholder')}
-                className={inputCls}
-              />
-            </Field>
+            <>
+              <Field label={t('mainJob')}>
+                <input
+                  type="text"
+                  value={mainJob}
+                  onChange={e => setMainJob(e.target.value)}
+                  placeholder={t('mainJobPlaceholder')}
+                  className={inputCls}
+                />
+              </Field>
+              <Field label={t('adminColHourlyRate')} error={errors.hourlyRate}>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={hourlyRateStr}
+                  onChange={(e) => setHourlyRateStr(e.target.value)}
+                  placeholder="20"
+                  className={inputCls}
+                />
+              </Field>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">{t('userModalSalaryHint')}</p>
+            </>
           )}
 
           {role==='employee' && (
@@ -194,7 +284,7 @@ export const UserModal: React.FC<Props> = ({ users, editUser, onCreate, onUpdate
                   {supervisors.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </Field>
-              <Field label={t('adminColHourlyRate')}>
+              <Field label={t('adminColHourlyRate')} error={errors.hourlyRate}>
                 <input
                   type="number"
                   min={0}
@@ -205,7 +295,7 @@ export const UserModal: React.FC<Props> = ({ users, editUser, onCreate, onUpdate
                   className={inputCls}
                 />
               </Field>
-              <Field label={t('adminColAnnualLeave')}>
+              <Field label={t('adminColAnnualLeave')} error={errors.annualLeave}>
                 <input
                   type="number"
                   min={0}

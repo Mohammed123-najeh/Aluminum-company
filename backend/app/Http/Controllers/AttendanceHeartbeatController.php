@@ -8,36 +8,85 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Activity-based attendance tracking.
+ * Explicit work-session tracking.
  *
- * The frontend pings POST /attendance/heartbeat every ~30 seconds while the
- * user is active. We stitch consecutive heartbeats into an attendance session
- * and close it when the gap between heartbeats exceeds GAP_THRESHOLD_SECONDS
- * (typically because the user went idle for 10+ minutes and the client
- * stopped sending pings, or because they closed the tab).
- *
- * This replaces the old "open a session on login / close on logout" model,
- * which would over-count time when employees stayed logged in but inactive,
- * and double-count when they logged in from multiple tabs.
+ * The frontend opens a session only after the user confirms "start work", then
+ * pings POST /attendance/heartbeat every ~30 seconds while that session is
+ * running. Consecutive heartbeats are stitched into one attendance row.
  */
 class AttendanceHeartbeatController extends Controller
 {
-    /**
-     * Stitching threshold: two heartbeats within this window count as one
-     * continuous session. Picked larger than the client's ping interval (30s)
-     * with margin for network jitter, but smaller than the idle threshold
-     * (10 min) so a deliberate pause closes the session.
-     */
     private const GAP_THRESHOLD_SECONDS = 90;
+    private const WORKDAY_LIMIT_MINUTES = 8 * 60;
+
+    private function closeLog(AttendanceLog $log, Carbon $closeAt): void
+    {
+        $limitAt = $log->clock_in_at->copy()->addMinutes(self::WORKDAY_LIMIT_MINUTES);
+        $effectiveClose = $closeAt->copy()->min($limitAt);
+
+        if ($effectiveClose->lt($log->clock_in_at)) {
+            $effectiveClose = $log->clock_in_at->copy();
+        }
+
+        $log->clock_out_at = $effectiveClose;
+        $log->last_heartbeat_at = $log->last_heartbeat_at ?? $effectiveClose;
+        $log->minutes_worked = min(
+            self::WORKDAY_LIMIT_MINUTES,
+            max(0, (int) $log->clock_in_at->diffInMinutes($effectiveClose))
+        );
+        $log->save();
+    }
+
+    private function queryLogsForDay(int $userId, Carbon $dayStart, Carbon $dayEnd)
+    {
+        return AttendanceLog::query()
+            ->where('user_id', $userId)
+            ->where(function ($q) use ($dayStart, $dayEnd) {
+                $q->whereBetween('clock_in_at', [$dayStart, $dayEnd])
+                    ->orWhere(function ($qq) use ($dayStart) {
+                        $qq->where('clock_in_at', '<', $dayStart)
+                            ->where(function ($qqq) use ($dayStart) {
+                                $qqq->whereNull('clock_out_at')
+                                    ->orWhere('clock_out_at', '>=', $dayStart);
+                            });
+                    });
+            });
+    }
+
+    private function minutesWorkedForDay(int $userId, Carbon $dayStart, Carbon $dayEnd): int
+    {
+        $minutes = 0;
+
+        foreach ($this->queryLogsForDay($userId, $dayStart, $dayEnd)->get() as $log) {
+            $start = $log->clock_in_at->copy()->max($dayStart);
+            $end = ($log->clock_out_at ?? $log->last_heartbeat_at ?? $log->clock_in_at)->copy()->min($dayEnd);
+
+            if ($end->gt($start)) {
+                $minutes += (int) $start->diffInMinutes($end);
+            }
+        }
+
+        return min(self::WORKDAY_LIMIT_MINUTES, $minutes);
+    }
+
+    private function inactiveResponse(Carbon $now, int $minutesWorked)
+    {
+        return response()->json([
+            'date' => $now->toDateString(),
+            'active' => false,
+            'workdayLimitMinutes' => self::WORKDAY_LIMIT_MINUTES,
+            'minutesWorked' => min(self::WORKDAY_LIMIT_MINUTES, $minutesWorked),
+            'openSession' => null,
+        ]);
+    }
 
     public function ping(Request $request)
     {
         $user = $request->user();
         $now = Carbon::now();
+        $intent = $request->input('intent') === 'start' ? 'start' : 'heartbeat';
 
-        // Wrap in a transaction with row-level locking so two simultaneous
-        // heartbeats from a duplicated tab can't both create new sessions.
-        return DB::transaction(function () use ($user, $now, $request) {
+        return DB::transaction(function () use ($user, $now, $request, $intent) {
             $open = AttendanceLog::query()
                 ->where('user_id', $user->id)
                 ->whereNull('clock_out_at')
@@ -45,48 +94,56 @@ class AttendanceHeartbeatController extends Controller
                 ->lockForUpdate()
                 ->first();
 
-            // Defensive cleanup: if multiple open sessions exist (legacy data,
-            // race that slipped through), close every one except the newest.
             $extraOpens = AttendanceLog::query()
                 ->where('user_id', $user->id)
                 ->whereNull('clock_out_at')
                 ->when($open, fn ($q) => $q->where('id', '!=', $open->id))
                 ->lockForUpdate()
                 ->get();
+
             foreach ($extraOpens as $stale) {
-                $closeAt = $stale->last_heartbeat_at ?? $stale->clock_in_at;
-                $stale->clock_out_at = $closeAt;
-                $stale->minutes_worked = max(0, (int) $stale->clock_in_at->diffInMinutes($closeAt));
-                $stale->save();
+                $this->closeLog($stale, $stale->last_heartbeat_at ?? $stale->clock_in_at);
             }
 
             if ($open) {
                 $lastTick = $open->last_heartbeat_at ?? $open->clock_in_at;
                 $gapSeconds = $lastTick ? (int) $lastTick->diffInSeconds($now) : self::GAP_THRESHOLD_SECONDS + 1;
+                $limitAt = $open->clock_in_at->copy()->addMinutes(self::WORKDAY_LIMIT_MINUTES);
+                $startedBeforeToday = $open->clock_in_at->lt($now->copy()->startOfDay());
 
-                if ($gapSeconds <= self::GAP_THRESHOLD_SECONDS) {
-                    // Continue the same session. Bump the heartbeat and recompute
-                    // minutes from clock_in_at so partial-minute increments roll up.
+                if ($startedBeforeToday || $now->gte($limitAt)) {
+                    $this->closeLog($open, $now->gte($limitAt) ? $limitAt : $lastTick);
+                    $open = null;
+                } elseif ($gapSeconds <= self::GAP_THRESHOLD_SECONDS) {
                     $open->last_heartbeat_at = $now;
-                    $open->minutes_worked = max(0, (int) $open->clock_in_at->diffInMinutes($now));
+                    $open->minutes_worked = min(
+                        self::WORKDAY_LIMIT_MINUTES,
+                        max(0, (int) $open->clock_in_at->diffInMinutes($now))
+                    );
                     $open->save();
 
                     return response()->json([
+                        'active' => true,
+                        'workdayLimitMinutes' => self::WORKDAY_LIMIT_MINUTES,
                         'sessionId' => (string) $open->id,
                         'sessionStartedAt' => $open->clock_in_at->toIso8601String(),
                         'minutesInSession' => $open->minutes_worked,
                         'continued' => true,
                     ]);
+                } else {
+                    $this->closeLog($open, $lastTick);
+                    $open = null;
                 }
-
-                // Gap too large — close the previous session at its last known
-                // heartbeat (not now, otherwise idle time would be counted).
-                $open->clock_out_at = $open->last_heartbeat_at ?? $open->clock_in_at;
-                $open->minutes_worked = max(0, (int) $open->clock_in_at->diffInMinutes($open->clock_out_at));
-                $open->save();
             }
 
-            // Open a fresh session anchored at `now`.
+            $dayStart = $now->copy()->startOfDay();
+            $dayEnd = $now->copy()->endOfDay();
+            $minutesWorked = $this->minutesWorkedForDay($user->id, $dayStart, $dayEnd);
+
+            if ($intent !== 'start' || $minutesWorked >= self::WORKDAY_LIMIT_MINUTES) {
+                return $this->inactiveResponse($now, $minutesWorked);
+            }
+
             $fresh = AttendanceLog::create([
                 'user_id' => $user->id,
                 'clock_in_at' => $now,
@@ -97,6 +154,8 @@ class AttendanceHeartbeatController extends Controller
             ]);
 
             return response()->json([
+                'active' => true,
+                'workdayLimitMinutes' => self::WORKDAY_LIMIT_MINUTES,
                 'sessionId' => (string) $fresh->id,
                 'sessionStartedAt' => $fresh->clock_in_at->toIso8601String(),
                 'minutesInSession' => 0,
@@ -108,10 +167,6 @@ class AttendanceHeartbeatController extends Controller
     /**
      * Quick summary for the top-bar timer: today's total worked minutes
      * (closed + open sessions) and whether a session is currently open.
-     *
-     * Sessions that span midnight (e.g. clocked in at 23:30 yesterday, still
-     * active at 00:30 today) are clipped to today's boundaries so the timer
-     * always shows "work done today" and resets cleanly at midnight.
      */
     public function today(Request $request)
     {
@@ -120,21 +175,22 @@ class AttendanceHeartbeatController extends Controller
         $dayStart = $now->copy()->startOfDay();
         $dayEnd = $now->copy()->endOfDay();
 
-        // Pull any session that overlaps today: clock_in is today, OR clock_in
-        // was earlier but it is still open / closed after midnight.
-        $logs = AttendanceLog::query()
+        AttendanceLog::query()
             ->where('user_id', $user->id)
-            ->where(function ($q) use ($dayStart, $dayEnd) {
-                $q->whereBetween('clock_in_at', [$dayStart, $dayEnd])
-                  ->orWhere(function ($qq) use ($dayStart) {
-                      $qq->where('clock_in_at', '<', $dayStart)
-                         ->where(function ($qqq) use ($dayStart) {
-                             $qqq->whereNull('clock_out_at')
-                                 ->orWhere('clock_out_at', '>=', $dayStart);
-                         });
-                  });
-            })
-            ->get();
+            ->whereNull('clock_out_at')
+            ->orderByDesc('clock_in_at')
+            ->get()
+            ->each(function (AttendanceLog $log) use ($now) {
+                $lastTick = $log->last_heartbeat_at ?? $log->clock_in_at;
+                $gapSeconds = $lastTick ? (int) $lastTick->diffInSeconds($now) : self::GAP_THRESHOLD_SECONDS + 1;
+                $limitAt = $log->clock_in_at->copy()->addMinutes(self::WORKDAY_LIMIT_MINUTES);
+
+                if ($log->clock_in_at->lt($now->copy()->startOfDay()) || $now->gte($limitAt) || $gapSeconds > self::GAP_THRESHOLD_SECONDS) {
+                    $this->closeLog($log, $now->gte($limitAt) ? $limitAt : $lastTick);
+                }
+            });
+
+        $logs = $this->queryLogsForDay($user->id, $dayStart, $dayEnd)->get();
 
         $closedMinutes = 0;
         $openSession = null;
@@ -152,7 +208,6 @@ class AttendanceHeartbeatController extends Controller
 
         $openMinutes = 0;
         if ($openSession) {
-            // Count only as far as the last heartbeat so idle time doesn't sneak in.
             $effectiveEnd = ($openSession->last_heartbeat_at ?? $openSession->clock_in_at)->copy()->min($dayEnd);
             $effectiveStart = $openSession->clock_in_at->copy()->max($dayStart);
             if ($effectiveEnd->gt($effectiveStart)) {
@@ -160,9 +215,12 @@ class AttendanceHeartbeatController extends Controller
             }
         }
 
+        $minutesWorked = min(self::WORKDAY_LIMIT_MINUTES, $closedMinutes + $openMinutes);
+
         return response()->json([
             'date' => $dayStart->toDateString(),
-            'minutesWorked' => $closedMinutes + $openMinutes,
+            'workdayLimitMinutes' => self::WORKDAY_LIMIT_MINUTES,
+            'minutesWorked' => $minutesWorked,
             'openSession' => $openSession ? [
                 'id' => (string) $openSession->id,
                 'startedAt' => $openSession->clock_in_at->toIso8601String(),

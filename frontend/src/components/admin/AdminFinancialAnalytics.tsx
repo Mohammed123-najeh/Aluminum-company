@@ -14,7 +14,8 @@ function customerLabel(o: ApiOrder): string {
 }
 
 export const AdminFinancialAnalytics: React.FC = () => {
-  const { t, token } = useApp();
+  const { t, token, lang } = useApp();
+  const isAr = lang === 'ar';
   const [range, setRange] = useState<AnalyticsRange>(null);
   const { data, loading, error, refresh } = useAdminAnalytics(range);
   const [recentReceipts, setRecentReceipts] = useState<ApiOrder[]>([]);
@@ -300,8 +301,23 @@ export const AdminFinancialAnalytics: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                recentReceipts.map((o) => (
-                  <tr key={o.id} className="text-slate-700 dark:text-slate-300">
+                recentReceipts.map((o) => {
+                  const isCancelled = Boolean(o.cancellationType || o.status === 'cancelled');
+                  const statusLabel =
+                    o.cancellationType === 'full' || o.status === 'cancelled'
+                      ? (isAr ? 'ملغي كامل' : 'Fully cancelled')
+                      : o.cancellationType === 'partial'
+                        ? (isAr ? 'ملغي جزئياً' : 'Partially cancelled')
+                        : o.paymentStatus === 'paid'
+                          ? t('receiptStatusPaid')
+                          : o.paymentStatus === 'partial'
+                            ? t('receiptStatusPartial')
+                            : o.paymentStatus === 'unpaid'
+                              ? t('receiptStatusUnpaid')
+                              : (o.paymentStatus ?? 'â€”');
+
+                  return (
+                  <tr key={o.id} className={`${isCancelled ? 'bg-rose-50/70 text-rose-900 dark:bg-rose-950/20 dark:text-rose-100' : 'text-slate-700 dark:text-slate-300'}`}>
                     <td className="py-2 pr-3 font-mono text-xs">{o.receiptNumber ?? o.id.slice(0, 8)}</td>
                     <td className="py-2 pr-3">{customerLabel(o)}</td>
                     <td className="py-2 pr-3 tabular-nums">{o.totalAmount != null ? formatIls(o.totalAmount) : '—'}</td>
@@ -312,7 +328,7 @@ export const AdminFinancialAnalytics: React.FC = () => {
                       {o.balanceDue != null ? formatIls(o.balanceDue) : '—'}
                     </td>
                     <td className="py-2 pr-3 text-xs">{o.paymentDueAt ?? '—'}</td>
-                    <td className="py-2 text-xs font-medium">
+                    <td className="py-2 text-xs font-medium hidden">
                       {o.paymentStatus === 'paid'
                         ? t('receiptStatusPaid')
                         : o.paymentStatus === 'partial'
@@ -321,8 +337,10 @@ export const AdminFinancialAnalytics: React.FC = () => {
                             ? t('receiptStatusUnpaid')
                             : (o.paymentStatus ?? '—')}
                     </td>
+                    <td className="py-2 text-xs font-medium">{statusLabel}</td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

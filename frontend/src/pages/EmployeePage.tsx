@@ -14,6 +14,7 @@ import { SectionPanel } from '../components/SectionPanel';
 import { AiAssistantPanel } from '../components/ai/AiAssistantPanel';
 import { NotificationBell } from '../components/notifications/NotificationBell';
 import { WorkClockBadge } from '../components/shared/WorkClockBadge';
+import { BrandLogo } from '../components/shared/BrandLogo';
 import { NotificationsPanel } from '../components/notifications/NotificationsPanel';
 import { useNotifications } from '../hooks/useNotifications';
 import { auth } from '../services/api';
@@ -126,26 +127,15 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
   return (
     <div className="flex h-screen overflow-hidden bg-slate-100 dark:bg-slate-950">
       <aside className="flex w-60 shrink-0 flex-col bg-slate-900 dark:bg-slate-950">
-        <div className="flex items-center gap-3 border-b border-slate-800 px-5 py-4">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-400 to-blue-600 shadow-lg shadow-indigo-500/30">
-            <span className="text-[11px] font-black tracking-tight text-white">AF</span>
-          </div>
-          <div>
-            <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-500">{t('aluminumFactory')}</p>
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm font-semibold leading-tight text-white">{t('employeePanel')}</p>
-              {isHr && (
-                <span className="rounded-md bg-violet-500/90 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-                  {t('hrPanelBadge')}
-                </span>
-              )}
-              {isAccountant && !isHr && (
-                <span className="rounded-md bg-emerald-600/90 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-                  {t('accountantPanelBadge')}
-                </span>
-              )}
+        <div className="border-b border-slate-800 px-5 py-4">
+          <BrandLogo panelLabel={t('employeePanel')} />
+          {(isHr || isAccountant) && (
+            <div className="mt-2 ps-14">
+              <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white ${isHr ? 'bg-violet-500/90' : 'bg-emerald-600/90'}`}>
+                {isHr ? t('hrPanelBadge') : t('accountantPanelBadge')}
+              </span>
             </div>
-          </div>
+          )}
         </div>
 
         <nav className="flex-1 space-y-1 px-3 py-4">

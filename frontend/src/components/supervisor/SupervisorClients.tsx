@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../contexts/AppContext';
 import type { ApiClient, ApiClientDetailResponse } from '../../services/api';
 import { clientsApi } from '../../services/api';
-import { ClientDetailView } from '../clients/ClientDetailView';
+import { ClientDetailView, type ClientDateFilter } from '../clients/ClientDetailView';
 import { formatIls } from '../../utils/currency';
 
 function initials(name: string): string {
@@ -103,9 +103,15 @@ function ClientListItem({
 }
 
 export const SupervisorClients: React.FC = () => {
-  const { t, token } = useApp();
+  const { t, token, lang } = useApp();
+  const isAr = lang === 'ar';
   const [q, setQ] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [dateMode, setDateMode] = useState<ClientDateFilter['mode']>('all');
+  const [exactDate, setExactDate] = useState(today);
+  const [monthValue, setMonthValue] = useState(today.slice(0, 7));
+  const [yearValue, setYearValue] = useState(today.slice(0, 4));
   const [list, setList] = useState<ApiClient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -210,6 +216,14 @@ export const SupervisorClients: React.FC = () => {
 
   const totalDue = useMemo(() => list.length, [list]);
 
+  const dateFilter = useMemo<ClientDateFilter>(() => {
+    if (dateMode === 'today') return { mode: 'today' };
+    if (dateMode === 'month') return { mode: 'month', month: monthValue };
+    if (dateMode === 'year') return { mode: 'year', year: yearValue };
+    if (dateMode === 'exact') return { mode: 'exact', date: exactDate };
+    return { mode: 'all' };
+  }, [dateMode, exactDate, monthValue, yearValue]);
+
   return (
     <div className="space-y-5">
       {error && (
@@ -308,6 +322,84 @@ export const SupervisorClients: React.FC = () => {
         </form>
       )}
 
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              {isAr ? 'فلترة تفاصيل العميل' : 'Client detail filter'}
+            </h3>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {isAr
+                ? 'يؤثر الفلتر على تفاصيل العميل المحدد: الإحصائيات، الطلبات، والمهام.'
+                : 'This filters the selected client detail page: stats, orders, and tasks.'}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 text-xs font-semibold dark:border-slate-700 dark:bg-slate-900/40">
+              {([
+                ['all', isAr ? 'الكل' : 'All'],
+                ['today', isAr ? 'اليوم' : 'Today'],
+                ['month', isAr ? 'الشهر' : 'Month'],
+                ['year', isAr ? 'السنة' : 'Year'],
+                ['exact', isAr ? 'تاريخ محدد' : 'Exact date'],
+              ] as Array<[ClientDateFilter['mode'], string]>).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setDateMode(mode)}
+                  className={`rounded-md px-3 py-1.5 transition ${
+                    dateMode === mode
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {dateMode === 'month' && (
+              <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                <span className="mb-1 block">{isAr ? 'الشهر' : 'Month'}</span>
+                <input
+                  type="month"
+                  value={monthValue}
+                  onChange={(e) => setMonthValue(e.target.value)}
+                  className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </label>
+            )}
+
+            {dateMode === 'year' && (
+              <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                <span className="mb-1 block">{isAr ? 'السنة' : 'Year'}</span>
+                <input
+                  type="number"
+                  min="2000"
+                  max="2100"
+                  value={yearValue}
+                  onChange={(e) => setYearValue(e.target.value.slice(0, 4))}
+                  className="h-9 w-24 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </label>
+            )}
+
+            {dateMode === 'exact' && (
+              <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                <span className="mb-1 block">{isAr ? 'التاريخ' : 'Date'}</span>
+                <input
+                  type="date"
+                  value={exactDate}
+                  onChange={(e) => setExactDate(e.target.value)}
+                  className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </label>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Master-detail layout */}
       <div className="grid gap-5 lg:grid-cols-[20rem_1fr]">
         <aside className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
@@ -351,7 +443,7 @@ export const SupervisorClients: React.FC = () => {
         </aside>
 
         <section>
-          <ClientDetailView detail={detail} loading={detailLoading} />
+          <ClientDetailView detail={detail} loading={detailLoading} dateFilter={dateFilter} />
         </section>
       </div>
     </div>

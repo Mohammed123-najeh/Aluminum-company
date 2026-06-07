@@ -5,7 +5,7 @@ import { formatIls } from '../../../utils/currency';
 import { StatusBadge } from '../../shared/dash';
 import { RecordPaymentModal } from './modals/RecordPaymentModal';
 
-type PaymentFilter = 'all' | 'paid' | 'partial' | 'unpaid';
+type PaymentFilter = 'all' | 'paid' | 'partial' | 'unpaid' | 'cancelled';
 
 /**
  * Orders tab — full table of every completed receipt-bearing order with
@@ -13,7 +13,8 @@ type PaymentFilter = 'all' | 'paid' | 'partial' | 'unpaid';
  * (View detail, Record payment). Filtered/searchable.
  */
 export const FinanceOrdersTab: React.FC = () => {
-  const { t, token } = useApp();
+  const { t, token, lang } = useApp();
+  const isAr = lang === 'ar';
   const [orders, setOrders] = useState<ApiOrder[]>([]);
   const [lastPayments, setLastPayments] = useState<Record<string, ApiOrderPayment | null>>({});
   const [loading, setLoading] = useState(true);
@@ -58,7 +59,9 @@ export const FinanceOrdersTab: React.FC = () => {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return orders.filter((o) => {
-      if (filter !== 'all' && o.paymentStatus !== filter) return false;
+      if (filter === 'cancelled' && !o.cancellationType && o.status !== 'cancelled') return false;
+      if (filter !== 'cancelled' && (o.cancellationType || o.status === 'cancelled') && filter !== 'all') return false;
+      if (filter !== 'all' && filter !== 'cancelled' && o.paymentStatus !== filter) return false;
       if (!q) return true;
       const hay = [o.id, o.clientName, o.taskCustomerName, o.customerReference, o.receiptNumber]
         .filter(Boolean)
@@ -96,6 +99,7 @@ export const FinanceOrdersTab: React.FC = () => {
               <option value="paid">{t('fin.overview.statusPaid')}</option>
               <option value="partial">{t('fin.overview.statusPartial')}</option>
               <option value="unpaid">{t('fin.overview.statusUnpaid')}</option>
+              <option value="cancelled">{isAr ? 'ملغي' : 'Cancelled'}</option>
             </select>
           </div>
         </div>
@@ -132,19 +136,23 @@ export const FinanceOrdersTab: React.FC = () => {
                   const total = o.totalAmount ?? 0;
                   const paid = o.amountPaid ?? 0;
                   const remaining = Math.max(0, total - paid);
+                  const isCancelled = Boolean(o.cancellationType || o.status === 'cancelled');
                   const tone: 'green' | 'amber' | 'rose' | 'slate' =
-                    o.paymentStatus === 'paid' ? 'green'
+                    isCancelled ? 'rose'
+                    : o.paymentStatus === 'paid' ? 'green'
                     : o.paymentStatus === 'partial' ? 'amber'
                     : o.paymentStatus === 'unpaid' ? 'rose'
                     : 'slate';
                   const label =
-                    o.paymentStatus === 'paid' ? t('fin.overview.statusPaid')
+                    o.cancellationType === 'full' || o.status === 'cancelled' ? (isAr ? 'ملغي كامل' : 'Fully cancelled')
+                    : o.cancellationType === 'partial' ? (isAr ? 'ملغي جزئياً' : 'Partially cancelled')
+                    : o.paymentStatus === 'paid' ? t('fin.overview.statusPaid')
                     : o.paymentStatus === 'partial' ? t('fin.overview.statusPartial')
                     : o.paymentStatus === 'unpaid' ? t('fin.overview.statusUnpaid')
                     : t('fin.overview.statusUnknown');
                   const last = lastPayments[o.id];
                   return (
-                    <tr key={o.id} className="text-slate-700 dark:text-slate-300">
+                    <tr key={o.id} className={`${isCancelled ? 'bg-rose-50/70 text-rose-900 dark:bg-rose-950/20 dark:text-rose-100' : 'text-slate-700 dark:text-slate-300'}`}>
                       <td className="py-3 font-semibold text-slate-900 dark:text-slate-100">{o.receiptNumber ?? `ORD-${o.id}`}</td>
                       <td className="py-3">{o.clientName ?? o.taskCustomerName ?? o.customerReference ?? '—'}</td>
                       <td className="py-3 text-xs text-slate-500">{new Date(o.updatedAt).toISOString().slice(0, 10)}</td>
@@ -167,7 +175,7 @@ export const FinanceOrdersTab: React.FC = () => {
                               <circle cx="12" cy="12" r="3" />
                             </svg>
                           </button>
-                          {remaining > 0.009 && (
+                          {!isCancelled && remaining > 0.009 && (
                             <button
                               type="button"
                               title={t('fin.orders.recordAction')}
@@ -207,9 +215,14 @@ export const FinanceOrdersTab: React.FC = () => {
  * spawning another file for a one-page peek.
  */
 const OrderDetailDrawer: React.FC<{ order: ApiOrder; onClose: () => void }> = ({ order, onClose }) => {
-  const { t, token } = useApp();
+  const { t, token, lang } = useApp();
+  const isAr = lang === 'ar';
   const [payments, setPayments] = useState<ApiOrderPayment[]>([]);
   const [loading, setLoading] = useState(true);
+  const cancellationLabel =
+    order.cancellationType === 'full' || order.status === 'cancelled' ? (isAr ? 'ملغي كامل' : 'Fully cancelled')
+    : order.cancellationType === 'partial' ? (isAr ? 'ملغي جزئياً' : 'Partially cancelled')
+    : null;
 
   useEffect(() => {
     if (!token) return;
@@ -251,6 +264,38 @@ const OrderDetailDrawer: React.FC<{ order: ApiOrder; onClose: () => void }> = ({
                 {formatIls(order.balanceDue ?? 0)}
               </p>
             </div>
+          </div>
+
+          {cancellationLabel && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
+              <p className="font-bold">{cancellationLabel}</p>
+              <p className="mt-1">
+                {isAr ? 'الملغى' : 'Cancelled'}: {formatIls(order.cancelledAmount ?? 0)} · {isAr ? 'المسترجع' : 'Refunded'}: {formatIls(order.refundedAmount ?? 0)}
+              </p>
+              {order.cancellationReason && <p className="mt-1">{order.cancellationReason}</p>}
+            </div>
+          )}
+
+          <div>
+            <h3 className="mb-2 text-xs font-semibold uppercase text-slate-500">{t('orderItems')}</h3>
+            <ul className="max-h-44 space-y-1 overflow-y-auto">
+              {order.items.map((item) => (
+                <li
+                  key={item.id}
+                  className={`flex items-center justify-between gap-2 rounded border px-3 py-2 text-xs ${
+                    item.isCancelled
+                      ? 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200'
+                      : 'border-slate-100 dark:border-slate-700'
+                  }`}
+                >
+                  <span className="min-w-0 truncate">
+                    {item.profileCode} {item.profileName} · {item.colorName}
+                    {item.isCancelled && <span className="ms-2 font-bold">{isAr ? 'ملغي' : 'Cancelled'}</span>}
+                  </span>
+                  <span className="shrink-0 tabular-nums">{formatIls(item.lineTotal ?? 0)}</span>
+                </li>
+              ))}
+            </ul>
           </div>
 
           <div>

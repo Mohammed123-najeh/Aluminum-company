@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { ApiOrder, ApiOrderPayment, CreateOrderPayload, UpdateOrderPayload } from '../services/api';
+import type { ApiOrder, ApiOrderPayment, CancelOrderPayload, CreateOrderPayload, UpdateOrderPayload } from '../services/api';
 import { ordersApi } from '../services/api';
 import { useApp } from '../contexts/AppContext';
 
@@ -93,6 +93,16 @@ export function useOrders() {
     [token],
   );
 
+  const cancelOrder = useCallback(
+    async (id: string, payload: CancelOrderPayload) => {
+      if (!token) return undefined;
+      const updated = await ordersApi.cancel(id, payload, token);
+      setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
+      return updated;
+    },
+    [token],
+  );
+
   const fetchOrderPayments = useCallback(
     async (id: string): Promise<ApiOrderPayment[] | undefined> => {
       if (!token) return undefined;
@@ -110,6 +120,7 @@ export function useOrders() {
     updatePayment,
     addOrderPayment,
     updateReceiptMeta,
+    cancelOrder,
     fetchOrderPayments,
     refetch: fetchOrders,
   };

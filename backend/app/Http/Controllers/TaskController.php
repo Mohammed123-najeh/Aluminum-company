@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Client;
+use App\Models\CustomerInvoice;
+use App\Models\FinanceTransaction;
 use App\Models\Order;
 use App\Models\OrderPayment;
 use App\Models\Message;
@@ -401,6 +403,7 @@ class TaskController extends Controller
                 /** @var Order|null $order */
                 $order = Order::query()->lockForUpdate()->find($task->order_id);
                 if ($order) {
+                    $oldTotal = round((float) ($order->total_amount ?? 0), 2);
                     $paid = (float) ($order->amount_paid ?? 0);
                     if ($paid > 0.009 && Schema::hasTable('order_payments')) {
                         OrderPayment::create([
@@ -412,8 +415,49 @@ class TaskController extends Controller
                         ]);
                         $refundedAmount = round($paid, 2);
                     }
+                    foreach ($order->items as $item) {
+                        $item->is_cancelled = true;
+                        $item->cancelled_amount = round((float) ($item->line_total ?? 0), 2);
+                        $item->cancelled_at = now();
+                        $item->cancelled_by = $user->id;
+                        $item->cancellation_reason = $data['reason'] ?? null;
+                        $item->save();
+                    }
+                    CustomerInvoice::query()
+                        ->where('order_id', $order->id)
+                        ->update([
+                            'paid' => 0,
+                            'balance' => 0,
+                            'status' => CustomerInvoice::STATUS_CANCELLED,
+                        ]);
+                    if ($refundedAmount > 0.009) {
+                        FinanceTransaction::updateOrCreate(
+                            ['ref_type' => 'order_cancellation', 'ref_id' => $order->id, 'type' => FinanceTransaction::TYPE_PAYMENT],
+                            [
+                                'source' => 'customer_refund',
+                                'party_type' => 'client',
+                                'party_id' => $order->client_id,
+                                'party_name' => $order->client?->name ?? $order->customer_reference,
+                                'amount' => $refundedAmount,
+                                'method' => 'refund',
+                                'reference_no' => $order->receipt_number ? 'REF-'.$order->receipt_number : 'REF-ORD-'.$order->id,
+                                'date' => now()->toDateString(),
+                                'notes' => $data['reason'] ?? null,
+                                'status' => 'completed',
+                                'created_by' => $user->id,
+                            ]
+                        );
+                    }
+                    $order->total_amount = 0;
                     $order->amount_paid = 0;
                     $order->status = 'cancelled';
+                    $order->payment_due_at = null;
+                    $order->cancellation_type = 'full';
+                    $order->cancelled_at = now();
+                    $order->cancelled_by = $user->id;
+                    $order->cancellation_reason = $data['reason'] ?? null;
+                    $order->cancelled_amount = round((float) ($order->cancelled_amount ?? 0) + $oldTotal, 2);
+                    $order->refunded_amount = round((float) ($order->refunded_amount ?? 0) + $refundedAmount, 2);
                     $order->save();
                 }
             }

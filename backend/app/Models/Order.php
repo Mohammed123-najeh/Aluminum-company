@@ -20,6 +20,12 @@ class Order extends Model
         'payment_notes',
         'currency',
         'receipt_number',
+        'cancellation_type',
+        'cancelled_at',
+        'cancelled_by',
+        'cancellation_reason',
+        'cancelled_amount',
+        'refunded_amount',
     ];
 
     protected function casts(): array
@@ -28,6 +34,9 @@ class Order extends Model
             'total_amount' => 'decimal:2',
             'amount_paid' => 'decimal:2',
             'payment_due_at' => 'date',
+            'cancelled_at' => 'datetime',
+            'cancelled_amount' => 'decimal:2',
+            'refunded_amount' => 'decimal:2',
         ];
     }
 
@@ -71,6 +80,11 @@ class Order extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(OrderPayment::class);
+    }
+
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
     }
 
     public function task(): \Illuminate\Database\Eloquent\Relations\HasOne
