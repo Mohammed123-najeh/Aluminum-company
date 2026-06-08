@@ -1,4 +1,4 @@
-import React, { useState, useEffect, startTransition } from 'react';
+import React, { useState, useEffect, useMemo, startTransition, Suspense, lazy } from 'react';
 import { useUsers } from '../hooks/useUsers';
 import { useApp } from '../contexts/AppContext';
 import { UserTable } from '../components/admin/UserTable';
@@ -7,11 +7,7 @@ import { StatsCards } from '../components/admin/StatsCards';
 import { UserModal } from '../components/admin/UserModal';
 import { SettingsModal } from '../components/admin/SettingsModal';
 import { SectionPanel } from '../components/SectionPanel';
-import { AiAssistantPanel } from '../components/ai/AiAssistantPanel';
 import { AdminMessages } from '../components/admin/AdminMessages';
-import { AdminAnalytics } from '../components/admin/AdminAnalytics';
-import { AdminFinancialAnalytics } from '../components/admin/AdminFinancialAnalytics';
-import { AdminPayrollPanel } from '../components/admin/AdminPayrollPanel';
 import { NotificationBell } from '../components/notifications/NotificationBell';
 import { WorkClockBadge } from '../components/shared/WorkClockBadge';
 import { BrandLogo } from '../components/shared/BrandLogo';
@@ -19,6 +15,20 @@ import { NotificationsPanel } from '../components/notifications/NotificationsPan
 import { useNotifications } from '../hooks/useNotifications';
 import { useMessages } from '../hooks/useMessages';
 import type { User, CreateUserInput, UpdateUserInput } from '../types/user';
+
+// Heavy, rarely-first-viewed panels — split out of the admin chunk so opening
+// "Users" doesn't pay for the AI assistant, charts, or payroll code.
+const AiAssistantPanel = lazy(() => import('../components/ai/AiAssistantPanel').then((m) => ({ default: m.AiAssistantPanel })));
+const AdminAnalytics = lazy(() => import('../components/admin/AdminAnalytics').then((m) => ({ default: m.AdminAnalytics })));
+const AdminFinancialAnalytics = lazy(() => import('../components/admin/AdminFinancialAnalytics').then((m) => ({ default: m.AdminFinancialAnalytics })));
+const AdminPayrollPanel = lazy(() => import('../components/admin/AdminPayrollPanel').then((m) => ({ default: m.AdminPayrollPanel })));
+
+/** Spinner shown while a lazy panel's chunk downloads. */
+const PanelLoader: React.FC = () => (
+  <div className="flex items-center justify-center py-20">
+    <span className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-indigo-500 dark:border-slate-700" />
+  </div>
+);
 
 type View = 'users' | 'orgchart' | 'analytics' | 'financial' | 'payroll' | 'messages' | 'assistant' | 'notifications';
 
@@ -45,6 +55,26 @@ const NavItem: React.FC<{
   </button>
 );
 
+/** Self-contained header date/time. Owns its own 1s interval so the ticking
+ *  clock re-renders only this tiny node, not the whole AdminPage tree. */
+const HeaderClock: React.FC = React.memo(() => {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return (
+    <p className="mt-px text-xs text-slate-400 dark:text-slate-500">
+      <span className="font-medium text-slate-600 dark:text-slate-300">{dateStr}</span>
+      <span className="mx-1.5 text-slate-300 dark:text-slate-600">·</span>
+      <span className="font-mono">{timeStr}</span>
+    </p>
+  );
+});
+HeaderClock.displayName = 'HeaderClock';
+
 type Props = {
   onLogout: () => void;
   initialAiShareToken?: string | null;
@@ -55,7 +85,6 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
   const { t, theme, toggleTheme, adminProfile, token } = useApp();
   const notif = useNotifications(token);
   const [view, setView] = useState<View>(() => (initialAiShareToken ? 'assistant' : 'users'));
-  const [now, setNow] = useState(new Date());
   const [showCreate, setShowCreate] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -63,11 +92,6 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
   const { users, loading: usersLoading, error: usersError, createUser, updateUser, deleteUser, toggleStatus, assignSupervisor } = useUsers();
   const [selectedMessagePeerId, setSelectedMessagePeerId] = useState<string | null>(null);
   const internalMessages = useMessages(selectedMessagePeerId);
-
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
-  }, []);
 
   const handleCreate = async (input: CreateUserInput) => {
     await createUser(input);
@@ -81,29 +105,28 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
     }
   };
 
-  const nonAdminUsers = users.filter((u) => u.role !== 'admin');
-  const supervisorCount = users.filter((u) => u.role === 'supervisor').length;
-  const employeeCount = users.filter((u) => u.role === 'employee').length;
-  const suspendedCount = users.filter((u) => u.status === 'suspended').length;
+  // Derived once per `users` change instead of on every render (the header clock
+  // re-renders frequently; these filters used to re-run 4× each second).
+  const { nonAdminUsers, supervisorCount, employeeCount, suspendedCount } = useMemo(() => {
+    const nonAdmin = users.filter((u) => u.role !== 'admin');
+    return {
+      nonAdminUsers: nonAdmin,
+      supervisorCount: users.filter((u) => u.role === 'supervisor').length,
+      employeeCount: users.filter((u) => u.role === 'employee').length,
+      suspendedCount: users.filter((u) => u.status === 'suspended').length,
+    };
+  }, [users]);
 
-  const dateStr = now.toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-  const timeStr = now.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-
-  const initials = adminProfile.name
-    .split(' ')
-    .map((w) => w[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
+  const initials = useMemo(
+    () =>
+      adminProfile.name
+        .split(' ')
+        .map((w) => w[0])
+        .join('')
+        .slice(0, 2)
+        .toUpperCase(),
+    [adminProfile.name],
+  );
 
   const goView = (v: View) => startTransition(() => setView(v));
 
@@ -294,11 +317,7 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
               {view === 'assistant' && t('aiAssistantNav')}
               {view === 'notifications' && t('notificationsTitle')}
             </h1>
-            <p className="mt-px text-xs text-slate-400 dark:text-slate-500">
-              <span className="font-medium text-slate-600 dark:text-slate-300">{dateStr}</span>
-              <span className="mx-1.5 text-slate-300 dark:text-slate-600">·</span>
-              <span className="font-mono">{timeStr}</span>
-            </p>
+            <HeaderClock />
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -461,6 +480,7 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
 
         {/* Content */}
         <main className="flex-1 overflow-auto p-6 space-y-5">
+          <Suspense fallback={<PanelLoader />}>
           {view === 'notifications' ? (
             <NotificationsPanel state={notif} onOpenMessagesWithPeer={openMessagesWithPeer} />
           ) : view === 'analytics' ? (
@@ -508,6 +528,7 @@ export const AdminPage: React.FC<Props> = ({ onLogout, initialAiShareToken, onAi
               </SectionPanel>
             </>
           )}
+          </Suspense>
         </main>
       </div>
 

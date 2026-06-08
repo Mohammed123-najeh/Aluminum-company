@@ -85,12 +85,22 @@ export function useWorkClock(): WorkClock {
   useEffect(() => {
     if (!token) return;
     void refresh();
-    refreshTimerRef.current = window.setInterval(() => void refresh(), REFRESH_TODAY_MS);
+    // The "today" total is display-only — pause its poll while the tab is hidden
+    // (the heartbeat above keeps the session alive regardless), and refresh once
+    // on return so the badge is correct the instant the user looks again.
+    refreshTimerRef.current = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh();
+    }, REFRESH_TODAY_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       if (refreshTimerRef.current !== null) {
         window.clearInterval(refreshTimerRef.current);
         refreshTimerRef.current = null;
       }
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [token, refresh]);
 

@@ -21,6 +21,7 @@ use App\Models\User;
 use App\Models\WorkScheduleSetting;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class FinanceCenterController extends Controller
@@ -38,6 +39,18 @@ class FinanceCenterController extends Controller
     {
         if ($r = $this->gate($request)) return $r;
 
+        // The dashboard runs a dozen aggregate queries; the figures are fine to be up
+        // to a minute stale on a summary screen. Cache the assembled payload so rapid
+        // re-opens / multiple viewers hit memory instead of recomputing every time.
+        $payload = Cache::remember('finance.dashboard.v1', now()->addSeconds(60), function () {
+            return $this->buildDashboardPayload();
+        });
+
+        return response()->json($payload);
+    }
+
+    private function buildDashboardPayload(): array
+    {
         $now = Carbon::now();
         $monthStart = $now->copy()->startOfMonth();
         $today = $now->copy()->toDateString();
@@ -61,15 +74,33 @@ class FinanceCenterController extends Controller
         $incompletePaymentCount = CustomerInvoice::whereNotIn('status', ['paid', 'cancelled'])
             ->where('balance', '>', 0)->count();
 
-        // 12-month trend
+        // 12-month trend — two grouped queries (revenue + expenses) instead of 24
+        // per-month SUM round-trips. Buckets for empty months are filled with 0 below.
+        $trendStart = $now->copy()->subMonths(11)->startOfMonth();
+        $monthlyTotals = FinanceTransaction::query()
+            ->whereIn('type', ['revenue', 'payment'])
+            ->where('date', '>=', $trendStart)
+            ->selectRaw("type, DATE_FORMAT(date, '%Y-%m') as ym, SUM(amount) as total")
+            ->groupBy('type', 'ym')
+            ->get();
+
+        $revenueByMonth = [];
+        $expenseByMonth = [];
+        foreach ($monthlyTotals as $row) {
+            if ($row->type === 'revenue') {
+                $revenueByMonth[$row->ym] = (float) $row->total;
+            } else {
+                $expenseByMonth[$row->ym] = (float) $row->total;
+            }
+        }
+
         $trend = [];
         for ($i = 11; $i >= 0; $i--) {
-            $s = $now->copy()->subMonths($i)->startOfMonth();
-            $e = $now->copy()->subMonths($i)->endOfMonth();
+            $ym = $now->copy()->subMonths($i)->format('Y-m');
             $trend[] = [
-                'month' => $s->format('Y-m'),
-                'revenue' => (float) FinanceTransaction::where('type', 'revenue')->whereBetween('date', [$s, $e])->sum('amount'),
-                'expenses' => (float) FinanceTransaction::where('type', 'payment')->whereBetween('date', [$s, $e])->sum('amount'),
+                'month' => $ym,
+                'revenue' => $revenueByMonth[$ym] ?? 0.0,
+                'expenses' => $expenseByMonth[$ym] ?? 0.0,
             ];
         }
 
@@ -105,7 +136,7 @@ class FinanceCenterController extends Controller
             ->where('due_date', '<', $now->copy()->subDays(30)->toDateString())
             ->sum('balance');
 
-        return response()->json([
+        return [
             'kpi' => [
                 'revenue' => ['value' => $revenueMonth, 'prev' => $revenueLastMonth],
                 'revenueToday' => ['value' => $revenueToday, 'prev' => 0],
@@ -117,14 +148,14 @@ class FinanceCenterController extends Controller
                 'incompletePaymentCount' => $incompletePaymentCount,
             ],
             'trend' => $trend,
-            'byCategory' => $byCategory,
-            'recent' => $recent,
+            'byCategory' => $byCategory->all(),
+            'recent' => $recent->all(),
             'alerts' => [
                 'overdueInvoices' => $overdueInvoices,
                 'pendingAdvances' => $pendingAdvances,
                 'debtsOver30' => $debtsOver30,
             ],
-        ]);
+        ];
     }
 
     // ===== Suppliers =====

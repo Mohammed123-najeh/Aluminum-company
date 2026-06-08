@@ -1,4 +1,4 @@
-import React, { useState, startTransition } from 'react';
+import React, { useState, startTransition, Suspense, lazy } from 'react';
 import { useApp } from '../contexts/AppContext';
 import { useMyEmployees } from '../hooks/useMyEmployees';
 import { useMessages } from '../hooks/useMessages';
@@ -9,20 +9,29 @@ import { SupervisorEmployeeModal } from '../components/supervisor/SupervisorEmpl
 import { SupervisorTeamTable } from '../components/supervisor/SupervisorTeamTable';
 import { SupervisorMessages } from '../components/supervisor/SupervisorMessages';
 import { SupervisorTasks } from '../components/supervisor/SupervisorTasks';
-import { EmployeeInventory } from '../components/employee/EmployeeInventory';
-import { SupervisorAnalytics } from '../components/supervisor/SupervisorAnalytics';
 import { SupervisorDashboard } from '../components/supervisor/SupervisorDashboard';
 import { SupervisorOrders } from '../components/supervisor/SupervisorOrders';
-import { SupervisorClients } from '../components/supervisor/SupervisorClients';
-import { EmployeeSalesReceipts } from '../components/employee/EmployeeSalesReceipts';
 import { SettingsModal } from '../components/admin/SettingsModal';
 import { SectionPanel } from '../components/SectionPanel';
-import { AiAssistantPanel } from '../components/ai/AiAssistantPanel';
 import { NotificationBell } from '../components/notifications/NotificationBell';
 import { WorkClockBadge } from '../components/shared/WorkClockBadge';
 import { BrandLogo } from '../components/shared/BrandLogo';
 import { NotificationsPanel } from '../components/notifications/NotificationsPanel';
 import { useNotifications } from '../hooks/useNotifications';
+
+// Heavy/secondary panels split out of the supervisor chunk — loaded when first opened.
+const EmployeeInventory = lazy(() => import('../components/employee/EmployeeInventory').then((m) => ({ default: m.EmployeeInventory })));
+const SupervisorAnalytics = lazy(() => import('../components/supervisor/SupervisorAnalytics').then((m) => ({ default: m.SupervisorAnalytics })));
+const SupervisorClients = lazy(() => import('../components/supervisor/SupervisorClients').then((m) => ({ default: m.SupervisorClients })));
+const EmployeeSalesReceipts = lazy(() => import('../components/employee/EmployeeSalesReceipts').then((m) => ({ default: m.EmployeeSalesReceipts })));
+const AiAssistantPanel = lazy(() => import('../components/ai/AiAssistantPanel').then((m) => ({ default: m.AiAssistantPanel })));
+
+/** Spinner shown while a lazy panel's chunk downloads. */
+const PanelLoader: React.FC = () => (
+  <div className="flex items-center justify-center py-20">
+    <span className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-indigo-500 dark:border-slate-700" />
+  </div>
+);
 
 type Section =
   | 'home'
@@ -308,6 +317,7 @@ export const SupervisorPage: React.FC<Props> = ({ onLogout, initialAiShareToken,
         </header>
 
         <main className="flex-1 overflow-auto p-6">
+          <Suspense fallback={<PanelLoader />}>
           <SectionPanel active={section === 'home'}>
             <SupervisorDashboard
               tasks={tasks}
@@ -395,6 +405,7 @@ export const SupervisorPage: React.FC<Props> = ({ onLogout, initialAiShareToken,
           <SectionPanel active={section === 'settings' && !showSettings}>
             <p className="text-sm text-slate-500 dark:text-slate-400">{t('settings')}</p>
           </SectionPanel>
+          </Suspense>
         </main>
       </div>
 

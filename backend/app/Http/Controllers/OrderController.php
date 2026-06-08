@@ -26,6 +26,9 @@ class OrderController extends Controller
             'supervisor:id,name',
             'client:id,name,phone,email',
             'task:id,title,order_id,customer_name,client_id',
+            // Preloaded so orderToArray()'s loadMissing() doesn't fire one query per
+            // order for the cancelling user (N+1 on a list of cancelled orders).
+            'cancelledBy:id,name',
         ]);
 
         if ($user->role === 'admin' || $user->isAccountant()) {

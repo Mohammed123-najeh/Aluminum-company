@@ -1,23 +1,35 @@
-import React, { useState, useEffect, startTransition } from 'react';
+import React, { useState, useEffect, useMemo, startTransition, Suspense, lazy } from 'react';
 import { useApp } from '../contexts/AppContext';
 import { useTasks } from '../hooks/useTasks';
 import { useMessages } from '../hooks/useMessages';
 import { EmployeeTasks } from '../components/employee/EmployeeTasks';
 import { EmployeeMessages } from '../components/employee/EmployeeMessages';
-import { EmployeeInventory } from '../components/employee/EmployeeInventory';
-import { EmployeeAnalytics } from '../components/employee/EmployeeAnalytics';
-import { EmployeeRequestsPanel } from '../components/employee/EmployeeRequestsPanel';
-import { HrCenterPanel } from '../components/hr/HrCenterPanel';
-import { AccountantFinancePanel } from '../components/accountant/AccountantFinancePanel';
 import { SettingsModal } from '../components/admin/SettingsModal';
 import { SectionPanel } from '../components/SectionPanel';
-import { AiAssistantPanel } from '../components/ai/AiAssistantPanel';
 import { NotificationBell } from '../components/notifications/NotificationBell';
 import { WorkClockBadge } from '../components/shared/WorkClockBadge';
 import { BrandLogo } from '../components/shared/BrandLogo';
 import { NotificationsPanel } from '../components/notifications/NotificationsPanel';
 import { useNotifications } from '../hooks/useNotifications';
 import { auth } from '../services/api';
+
+// The HR and Finance centers are the heaviest panels in the app and only the
+// HR/accountant roles ever open them — split each into its own chunk. Inventory,
+// analytics, requests and the AI assistant are also lazy so the default overview
+// loads fast.
+const HrCenterPanel = lazy(() => import('../components/hr/HrCenterPanel').then((m) => ({ default: m.HrCenterPanel })));
+const AccountantFinancePanel = lazy(() => import('../components/accountant/AccountantFinancePanel').then((m) => ({ default: m.AccountantFinancePanel })));
+const EmployeeInventory = lazy(() => import('../components/employee/EmployeeInventory').then((m) => ({ default: m.EmployeeInventory })));
+const EmployeeAnalytics = lazy(() => import('../components/employee/EmployeeAnalytics').then((m) => ({ default: m.EmployeeAnalytics })));
+const EmployeeRequestsPanel = lazy(() => import('../components/employee/EmployeeRequestsPanel').then((m) => ({ default: m.EmployeeRequestsPanel })));
+const AiAssistantPanel = lazy(() => import('../components/ai/AiAssistantPanel').then((m) => ({ default: m.AiAssistantPanel })));
+
+/** Spinner shown while a lazy panel's chunk downloads. */
+const PanelLoader: React.FC = () => (
+  <div className="flex items-center justify-center py-20">
+    <span className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-indigo-500 dark:border-slate-700" />
+  </div>
+);
 
 type Section =
   | 'overview'
@@ -81,12 +93,16 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
   const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
   const messages = useMessages(selectedSenderId);
 
-  const initials = adminProfile.name
-    .split(' ')
-    .map((w) => w[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
+  const initials = useMemo(
+    () =>
+      adminProfile.name
+        .split(' ')
+        .map((w) => w[0])
+        .join('')
+        .slice(0, 2)
+        .toUpperCase(),
+    [adminProfile.name],
+  );
 
   const go = (s: Section) => startTransition(() => setSection(s));
 
@@ -302,6 +318,7 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
         </header>
 
         <main className="flex-1 overflow-auto p-6">
+          <Suspense fallback={<PanelLoader />}>
           <SectionPanel active={section === 'overview'}>
             {isHr ? (
               <HrCenterPanel />
@@ -374,6 +391,7 @@ export const EmployeePage: React.FC<Props> = ({ onLogout, initialAiShareToken, o
           <SectionPanel active={section === 'settings' && !showSettings}>
             <p className="text-sm text-slate-500 dark:text-slate-400">{t('settings')}</p>
           </SectionPanel>
+          </Suspense>
         </main>
       </div>
 

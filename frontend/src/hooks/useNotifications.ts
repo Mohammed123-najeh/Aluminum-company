@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ApiUserNotification } from '../services/api';
 import { notificationsApi } from '../services/api';
+import { useVisiblePoll } from './useVisiblePoll';
 
 const POLL_MS = 45_000;
 
@@ -57,9 +58,10 @@ export function useNotifications(token: string | null): NotificationsHookReturn 
       return;
     }
     refreshCount();
-    const id = window.setInterval(refreshCount, POLL_MS);
-    return () => clearInterval(id);
   }, [token, refreshCount]);
+
+  // Poll the unread count only while the tab is visible; refresh on re-focus.
+  useVisiblePoll(refreshCount, POLL_MS, Boolean(token));
 
   const markRead = useCallback(
     async (id: string) => {

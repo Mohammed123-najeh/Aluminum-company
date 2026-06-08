@@ -14,6 +14,7 @@ use App\Models\WorkScheduleSetting;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
@@ -33,6 +34,19 @@ class HrCenterController extends Controller
     public function dashboard(Request $request)
     {
         if ($r = $this->gate($request)) return $r;
+
+        // Short pure-TTL cache: smooths repeated loads / multiple viewers. No observer
+        // busting here on purpose — attendance heartbeats write AttendanceLog every ~30s,
+        // so a 30s TTL is both the natural freshness window and self-limiting.
+        $payload = Cache::remember('hr.dashboard.v1', now()->addSeconds(30), function () {
+            return $this->buildDashboardPayload();
+        });
+
+        return response()->json($payload);
+    }
+
+    private function buildDashboardPayload(): array
+    {
         $today = Carbon::today();
         $weekStart = Carbon::today()->subDays(6);
 
@@ -53,15 +67,26 @@ class HrCenterController extends Controller
         $monthStart = Carbon::now()->startOfMonth();
         $monthEnd = Carbon::now()->endOfMonth();
         $activeStaff = User::where('role', '!=', 'admin')->where('status', 'active')->get(['id', 'hourly_rate', 'allowances']);
+
+        // Per-employee minute totals in 2 grouped queries instead of 2 per employee
+        // (was 2×N round-trips — 100 queries for 50 staff).
+        $staffIds = $activeStaff->pluck('id');
+        $minutesMonthByUser = AttendanceLog::whereIn('user_id', $staffIds)
+            ->whereBetween('clock_in_at', [$monthStart, $monthEnd])
+            ->selectRaw('user_id, SUM(minutes_worked) as m')
+            ->groupBy('user_id')->pluck('m', 'user_id');
+        $minutesTodayByUser = AttendanceLog::whereIn('user_id', $staffIds)
+            ->whereDate('clock_in_at', $today)
+            ->selectRaw('user_id, SUM(minutes_worked) as m')
+            ->groupBy('user_id')->pluck('m', 'user_id');
+
         $monthlyPayroll = 0.0;
         $dailyPayroll = 0.0;
         foreach ($activeStaff as $u) {
             $rate = (float) ($u->hourly_rate ?? 0);
             if ($rate > 0) {
-                $minMonth = (int) AttendanceLog::where('user_id', $u->id)
-                    ->whereBetween('clock_in_at', [$monthStart, $monthEnd])->sum('minutes_worked');
-                $minToday = (int) AttendanceLog::where('user_id', $u->id)
-                    ->whereDate('clock_in_at', $today)->sum('minutes_worked');
+                $minMonth = (int) ($minutesMonthByUser[$u->id] ?? 0);
+                $minToday = (int) ($minutesTodayByUser[$u->id] ?? 0);
                 $monthlyPayroll += round(($minMonth / 60) * $rate, 2);
                 $dailyPayroll += round(($minToday / 60) * $rate, 2);
             }
@@ -72,16 +97,26 @@ class HrCenterController extends Controller
         $monthlyPayroll = round($monthlyPayroll, 2);
         $dailyPayroll = round($dailyPayroll, 2);
 
-        // Weekly attendance line
+        // Weekly attendance line — 2 grouped queries over the 7-day window instead of
+        // 2 per day. Present = distinct users with a non-absent log that day.
+        $presentByDay = AttendanceLog::where('clock_in_at', '>=', $weekStart->copy()->startOfDay())
+            ->where('status', '!=', 'absent')
+            ->selectRaw('DATE(clock_in_at) as d, COUNT(DISTINCT user_id) as c')
+            ->groupBy('d')->pluck('c', 'd');
+        $lateByDay = AttendanceLog::where('clock_in_at', '>=', $weekStart->copy()->startOfDay())
+            ->where('status', 'late')
+            ->selectRaw('DATE(clock_in_at) as d, COUNT(*) as c')
+            ->groupBy('d')->pluck('c', 'd');
+
         $weekly = [];
         for ($d = 6; $d >= 0; $d--) {
             $day = Carbon::today()->subDays($d);
-            $present = AttendanceLog::whereDate('clock_in_at', $day)->where('status', '!=', 'absent')->distinct('user_id')->count('user_id');
-            $late = AttendanceLog::whereDate('clock_in_at', $day)->where('status', 'late')->count();
+            $key = $day->toDateString();
+            $present = (int) ($presentByDay[$key] ?? 0);
             $weekly[] = [
-                'date' => $day->toDateString(),
+                'date' => $key,
                 'present' => $present,
-                'late' => $late,
+                'late' => (int) ($lateByDay[$key] ?? 0),
                 'absent' => max(0, $totalEmployees - $present),
             ];
         }
@@ -108,7 +143,7 @@ class HrCenterController extends Controller
                 'lateMinutes' => (int) ($a->late_minutes ?? 0),
             ]);
 
-        return response()->json([
+        return [
             'kpi' => [
                 'totalEmployees' => $totalEmployees,
                 'presentToday' => $presentToday,
@@ -121,9 +156,9 @@ class HrCenterController extends Controller
                 'dailyPayroll' => $dailyPayroll,
             ],
             'weekly' => $weekly,
-            'byDepartment' => $byDept,
-            'liveAttendance' => $live,
-        ]);
+            'byDepartment' => $byDept->all(),
+            'liveAttendance' => $live->all(),
+        ];
     }
 
     // ===== Employees =====

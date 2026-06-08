@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { translations } from '../i18n/translations';
 import type { TKey, Lang } from '../i18n/translations';
 import type { ApiUser } from '../services/api';
@@ -60,20 +60,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     document.documentElement.lang = lang;
   }, [lang]);
 
-  const setLang = (l: Lang) => setLangState(l);
+  const setLang = useCallback((l: Lang) => setLangState(l), []);
 
-  const toggleTheme = () =>
-    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
-
-  const t = (key: TKey): string => translations[lang][key] ?? key;
-
-  return (
-    <AppContext.Provider
-      value={{ lang, setLang, theme, toggleTheme, t, adminProfile, setAdminProfile, adminPassword, setAdminPassword, token, setToken, currentUser, setCurrentUser }}
-    >
-      {children}
-    </AppContext.Provider>
+  const toggleTheme = useCallback(
+    () => setTheme((prev) => (prev === 'light' ? 'dark' : 'light')),
+    [],
   );
+
+  // `t` only changes when the language changes — keeping it stable means consumers
+  // that depend on it don't re-render on unrelated state updates (theme, token, user).
+  const t = useCallback((key: TKey): string => translations[lang][key] ?? key, [lang]);
+
+  // Memoize the context value so a change to one field doesn't hand every consumer a
+  // brand-new object (which would re-render the entire tree on every state update).
+  const value = useMemo(
+    () => ({ lang, setLang, theme, toggleTheme, t, adminProfile, setAdminProfile, adminPassword, setAdminPassword, token, setToken, currentUser, setCurrentUser }),
+    [lang, setLang, theme, toggleTheme, t, adminProfile, adminPassword, token, setToken, currentUser],
+  );
+
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 };
 
 export const useApp = (): AppContextType => {

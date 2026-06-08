@@ -1,15 +1,27 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import ReactDOM from 'react-dom/client';
 import './style.css';
 import { AppProvider, useApp } from './contexts/AppContext';
 import { LoginPage } from './LoginPage';
-import { ResetPasswordPage } from './ResetPasswordPage';
-import { AdminPage } from './pages/AdminPage';
-import { SupervisorPage } from './pages/SupervisorPage';
-import { EmployeePage } from './pages/EmployeePage';
 import { attendanceApi, auth } from './services/api';
 import { navigate } from './utils/navigation';
 import { formatAmPm, formatWorkDuration } from './utils/workTime';
+
+// Role dashboards are large (each pulls in dozens of panels). Load them on demand
+// so the initial bundle only ships login + shell. A logged-in user downloads just
+// their own role's dashboard, not all three.
+const AdminPage = lazy(() => import('./pages/AdminPage').then((m) => ({ default: m.AdminPage })));
+const SupervisorPage = lazy(() => import('./pages/SupervisorPage').then((m) => ({ default: m.SupervisorPage })));
+const EmployeePage = lazy(() => import('./pages/EmployeePage').then((m) => ({ default: m.EmployeePage })));
+// Public deep-link route — only ever needed by visitors following a reset email.
+const ResetPasswordPage = lazy(() => import('./ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })));
+
+/** Full-screen spinner reused for both auth-check and lazy-route fallbacks. */
+const FullScreenSpinner: React.FC = () => (
+  <div className="flex h-screen items-center justify-center bg-slate-950">
+    <span className="h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-indigo-500" />
+  </div>
+);
 
 function readAiShareParam(): string | null {
   try {
@@ -124,56 +136,31 @@ const App: React.FC = () => {
   };
 
   if (checking) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-slate-950">
-        <span className="h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-indigo-500" />
-      </div>
-    );
+    return <FullScreenSpinner />;
   }
 
   // Public /reset-password route. Available to any visitor (logged in or not)
   // since password recovery may be initiated from an authenticated session too.
   if (path === '/reset-password') {
-    return <ResetPasswordPage onBackToLogin={() => navigate('/')} />;
+    return (
+      <Suspense fallback={<FullScreenSpinner />}>
+        <ResetPasswordPage onBackToLogin={() => navigate('/')} />
+      </Suspense>
+    );
   }
 
   if (!loggedIn) {
     return <LoginPage onLoginSuccess={() => setLoggedIn(true)} />;
   }
 
-  if (currentUser?.role === 'supervisor') {
-    return (
-      <>
-        <SupervisorPage
-          onLogout={handleLogout}
-          initialAiShareToken={pendingShareToken}
-          onAiShareConsumed={clearAiShareParam}
-        />
-        <LogoutPrompt prompt={logoutPrompt} loggingOut={loggingOut} onCancel={() => setLogoutPrompt(null)} onConfirm={() => void performLogout()} />
-      </>
-    );
-  }
-  if (currentUser?.role === 'employee') {
-    return (
-      <>
-        <EmployeePage
-          onLogout={handleLogout}
-          initialAiShareToken={pendingShareToken}
-          onAiShareConsumed={clearAiShareParam}
-        />
-        <LogoutPrompt prompt={logoutPrompt} loggingOut={loggingOut} onCancel={() => setLogoutPrompt(null)} onConfirm={() => void performLogout()} />
-      </>
-    );
-  }
+  const RolePage =
+    currentUser?.role === 'supervisor' ? SupervisorPage : currentUser?.role === 'employee' ? EmployeePage : AdminPage;
+
   return (
-    <>
-      <AdminPage
-        onLogout={handleLogout}
-        initialAiShareToken={pendingShareToken}
-        onAiShareConsumed={clearAiShareParam}
-      />
+    <Suspense fallback={<FullScreenSpinner />}>
+      <RolePage onLogout={handleLogout} initialAiShareToken={pendingShareToken} onAiShareConsumed={clearAiShareParam} />
       <LogoutPrompt prompt={logoutPrompt} loggingOut={loggingOut} onCancel={() => setLogoutPrompt(null)} onConfirm={() => void performLogout()} />
-    </>
+    </Suspense>
   );
 };
 

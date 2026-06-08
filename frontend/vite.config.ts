@@ -3,6 +3,24 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [tailwindcss()],
+  build: {
+    rollupOptions: {
+      output: {
+        // Split rarely-changing, large deps into their own long-lived chunks so a
+        // code change to app logic doesn't invalidate them in the browser cache.
+        // Vite 8 (Rolldown) requires manualChunks as a function, not a map.
+        manualChunks(id: string) {
+          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/') || id.includes('node_modules/scheduler')) {
+            return 'react-vendor';
+          }
+          // 3.6k-line translation tables — large and change independently of UI code.
+          if (id.includes('/src/i18n/translations')) {
+            return 'i18n';
+          }
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

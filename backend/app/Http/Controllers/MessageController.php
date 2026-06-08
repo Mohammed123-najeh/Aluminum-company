@@ -295,6 +295,14 @@ class MessageController extends Controller
             ->orderByDesc('created_at')
             ->get();
 
+        // All unread counts in ONE grouped query (was one COUNT per conversation peer).
+        $unreadByPeer = Message::query()
+            ->where('receiver_id', $user->id)
+            ->whereNull('read_at')
+            ->selectRaw('sender_id, COUNT(*) as c')
+            ->groupBy('sender_id')
+            ->pluck('c', 'sender_id');
+
         $seen = [];
         $result = [];
         foreach ($rows as $m) {
@@ -307,11 +315,7 @@ class MessageController extends Controller
                 continue;
             }
             $seen[$peerId] = true;
-            $unread = Message::query()
-                ->where('sender_id', $peerId)
-                ->where('receiver_id', $user->id)
-                ->whereNull('read_at')
-                ->count();
+            $unread = (int) ($unreadByPeer[$peerId] ?? 0);
             $result[] = [
                 'id' => (string) $m->id,
                 'peerId' => (string) $peerId,

@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Support\ReceiptPaymentAnalytics;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class AdminAnalyticsController extends Controller
 {
@@ -31,7 +32,6 @@ class AdminAnalyticsController extends Controller
         // Optional date-range filter: when both `from` and `to` are present, the page's
         // time-sensitive aggregations (finance KPIs, tasks/orders created in period,
         // messages in period, supervisor task counts) are scoped to that window.
-        $now = Carbon::now();
         $rawFrom = $request->query('from');
         $rawTo = $request->query('to');
         $filterFrom = null;
@@ -48,6 +48,22 @@ class AdminAnalyticsController extends Controller
                 $filterTo = null;
             }
         }
+
+        // Only the default (unfiltered) view is cached — it's the one loaded on every
+        // visit. Filtered/range views are ad-hoc and always computed fresh.
+        if ($filterFrom === null || $filterTo === null) {
+            $payload = Cache::remember('admin.analytics.v1', now()->addSeconds(60), function () {
+                return $this->buildPayload(null, null);
+            });
+            return response()->json($payload);
+        }
+
+        return response()->json($this->buildPayload($filterFrom, $filterTo));
+    }
+
+    private function buildPayload(?Carbon $filterFrom, ?Carbon $filterTo): array
+    {
+        $now = Carbon::now();
         $filtered = $filterFrom !== null && $filterTo !== null;
 
         $nonAdmin = User::query()->where('role', '!=', 'admin')->get();
@@ -69,17 +85,18 @@ class AdminAnalyticsController extends Controller
             ],
         ];
 
-        $supervisorTeams = $supervisors->map(function (User $s) {
-            $team = User::query()
-                ->where('supervisor_id', $s->id)
-                ->where('role', 'employee');
+        // Count team sizes from the already-loaded $employees collection instead of
+        // running 2 queries per supervisor (was N+1 over supervisors).
+        $employeesBySupervisor = $employees->groupBy('supervisor_id');
+        $supervisorTeams = $supervisors->map(function (User $s) use ($employeesBySupervisor) {
+            $team = $employeesBySupervisor->get($s->id) ?? collect();
 
             return [
                 'id' => (string) $s->id,
                 'name' => $s->name,
                 'email' => $s->email,
-                'teamSize' => (clone $team)->count(),
-                'activeEmployees' => (clone $team)->where('status', 'active')->count(),
+                'teamSize' => $team->count(),
+                'activeEmployees' => $team->where('status', 'active')->count(),
             ];
         })->sortByDesc('teamSize')->values()->all();
 
@@ -266,7 +283,7 @@ class AdminAnalyticsController extends Controller
             ];
         }
 
-        return response()->json([
+        return [
             'generatedAt' => $now->toIso8601String(),
             'users' => $usersBlock,
             'supervisorTeams' => $supervisorTeams,
@@ -296,6 +313,6 @@ class AdminAnalyticsController extends Controller
                 'dueNextMonth' => $receiptKpis['dueNextMonth'],
                 'topOutstandingCustomers' => $receiptKpis['topOutstandingCustomers'],
             ],
-        ]);
+        ];
     }
 }
