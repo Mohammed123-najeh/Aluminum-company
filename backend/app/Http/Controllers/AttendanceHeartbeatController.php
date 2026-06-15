@@ -84,7 +84,8 @@ class AttendanceHeartbeatController extends Controller
     {
         $user = $request->user();
         $now = Carbon::now();
-        $intent = $request->input('intent') === 'start' ? 'start' : 'heartbeat';
+        $raw = $request->input('intent');
+        $intent = in_array($raw, ['start', 'stop'], true) ? $raw : 'heartbeat';
 
         return DB::transaction(function () use ($user, $now, $request, $intent) {
             $open = AttendanceLog::query()
@@ -103,6 +104,19 @@ class AttendanceHeartbeatController extends Controller
 
             foreach ($extraOpens as $stale) {
                 $this->closeLog($stale, $stale->last_heartbeat_at ?? $stale->clock_in_at);
+            }
+
+            // Explicit "End work": close the open session now (saving the minutes
+            // worked so far) and report inactive. Logging in/out no longer touches
+            // the clock — only Start/End work does.
+            if ($intent === 'stop') {
+                if ($open) {
+                    $this->closeLog($open, $now);
+                }
+                $dayStart = $now->copy()->startOfDay();
+                $dayEnd = $now->copy()->endOfDay();
+
+                return $this->inactiveResponse($now, $this->minutesWorkedForDay($user->id, $dayStart, $dayEnd));
             }
 
             if ($open) {

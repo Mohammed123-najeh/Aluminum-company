@@ -15,6 +15,7 @@ export type WorkClock = {
   loading: boolean;
   refresh: () => Promise<void>;
   startWork: () => Promise<void>;
+  endWork: () => Promise<void>;
 };
 
 export function useWorkClock(): WorkClock {
@@ -48,7 +49,7 @@ export function useWorkClock(): WorkClock {
     }
   }, [token]);
 
-  const sendHeartbeat = useCallback(async (intent: 'start' | 'heartbeat' = 'heartbeat') => {
+  const sendHeartbeat = useCallback(async (intent: 'start' | 'heartbeat' | 'stop' = 'heartbeat') => {
     if (!token) return;
     setLoading(true);
     try {
@@ -70,6 +71,14 @@ export function useWorkClock(): WorkClock {
     startedByThisPageRef.current = true;
     await sendHeartbeat('start');
   }, [minutesToday, sendHeartbeat, workdayLimitMinutes]);
+
+  const endWork = useCallback(async () => {
+    // Stop the counter immediately so the badge flips even before the round-trip,
+    // then close the session server-side (saving minutes worked up to now).
+    startedByThisPageRef.current = false;
+    setIsWorking(false);
+    await sendHeartbeat('stop');
+  }, [sendHeartbeat]);
 
   useEffect(() => {
     if (!token || !isWorking) return;
@@ -122,5 +131,6 @@ export function useWorkClock(): WorkClock {
     loading,
     refresh,
     startWork,
+    endWork,
   };
 }
