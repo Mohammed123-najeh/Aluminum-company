@@ -28,33 +28,39 @@ class FinalizeDraftOrderForCompletedTask
             if (! $order || $order->status !== 'draft') {
                 return;
             }
-            if ($order->items->isEmpty()) {
-                return;
+
+            // Custom orders (created from the supervisor's "custom order" builder) carry
+            // a supervisor-entered total but NO line items. Stock-fulfilled orders carry
+            // priced items. Both must finalize so the accountant's Orders + Receipts
+            // pipeline (and therefore Finance) can see them — previously item-less orders
+            // returned here and stayed 'draft' forever, invisible to Finance.
+            if ($order->items->isNotEmpty()) {
+                $grand = 0.0;
+
+                foreach ($order->items as $item) {
+                    $inv = Inventory::query()
+                        ->where('profile_id', $item->profile_id)
+                        ->where('color_code', $item->color_code)
+                        ->orderBy('id')
+                        ->first();
+
+                    $unit = $inv
+                        ? InventoryPricing::unitPrice($inv)
+                        : InventoryPricing::unitPriceForProfileColor((int) $item->profile_id, (string) $item->color_code);
+
+                    $qty = (int) $item->quantity;
+                    $lineTotal = round($unit * $qty, 2);
+                    $grand += $lineTotal;
+
+                    $item->unit_price = $unit;
+                    $item->line_total = $lineTotal;
+                    $item->save();
+                }
+
+                $order->total_amount = round($grand, 2);
             }
+            // else: keep the supervisor-entered total_amount as-is.
 
-            $grand = 0.0;
-
-            foreach ($order->items as $item) {
-                $inv = Inventory::query()
-                    ->where('profile_id', $item->profile_id)
-                    ->where('color_code', $item->color_code)
-                    ->orderBy('id')
-                    ->first();
-
-                $unit = $inv
-                    ? InventoryPricing::unitPrice($inv)
-                    : InventoryPricing::unitPriceForProfileColor((int) $item->profile_id, (string) $item->color_code);
-
-                $qty = (int) $item->quantity;
-                $lineTotal = round($unit * $qty, 2);
-                $grand += $lineTotal;
-
-                $item->unit_price = $unit;
-                $item->line_total = $lineTotal;
-                $item->save();
-            }
-
-            $order->total_amount = round($grand, 2);
             $order->currency = 'ILS';
             $order->receipt_number = $this->nextReceiptNumber();
             $order->status = 'completed';

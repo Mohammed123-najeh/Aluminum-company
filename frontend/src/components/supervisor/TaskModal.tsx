@@ -224,7 +224,7 @@ export const TaskModal: React.FC<Props> = ({ employees, task, onSave, onClose, i
   return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4">
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="no-print absolute inset-0 bg-black/50 backdrop-blur-sm"
         onClick={showCreateStep2 || showEditStock ? undefined : onClose}
         aria-hidden
       />
@@ -235,7 +235,7 @@ export const TaskModal: React.FC<Props> = ({ employees, task, onSave, onClose, i
       >
         {showCreateStep2 ? (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/80">
+            <div className="no-print flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/80">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
                   {t('taskWizardStep2Badge')}
@@ -317,7 +317,7 @@ export const TaskModal: React.FC<Props> = ({ employees, task, onSave, onClose, i
           </div>
         ) : showEditStock ? (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/80">
+            <div className="no-print flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/90 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/80">
               <div>
                 <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
                   {catalogScope === 'accessories' ? t('taskAccessoriesFullPageTitle') : t('taskStockFullPageTitle')}

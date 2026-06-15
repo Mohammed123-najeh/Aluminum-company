@@ -481,6 +481,11 @@ class FinanceCenterController extends Controller
     {
         if ($r = $this->gate($request)) return $r;
         $inv = CustomerInvoice::findOrFail($id);
+        // A cancelled invoice belongs to a cancelled order — it's a closed record and
+        // must not be re-opened or edited (which would resurrect it in receivables).
+        if ($inv->status === CustomerInvoice::STATUS_CANCELLED) {
+            return response()->json(['message' => 'This invoice is cancelled and can no longer be modified'], 422);
+        }
         $inv->update($request->only(['date', 'due_date', 'notes', 'status']));
         return response()->json($inv->fresh(['client', 'items'])->toApiArray());
     }

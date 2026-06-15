@@ -3,6 +3,9 @@ import { useApp } from '../../contexts/AppContext';
 import type { ApiFulfillTaskResponse, ApiInventoryOffer } from '../../services/api';
 import { salesApi } from '../../services/api';
 import { formatIls } from '../../utils/currency';
+// Full brand logo (gold pearl + waves + EN/AR wordmark). One asset gives both the
+// logo and the company name on the printed receipt — Vite fingerprints/bundles it.
+import brandLogoFull from '../../assets/brand-logo-full.jpeg';
 
 export type CartLine = {
   inventoryId: number;
@@ -313,11 +316,33 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
 
   if (receipt && mode === 'supervisor') {
     const rc = receiptCustomerInfo;
+    // Print only the receipt card: a body class flips on the global @media print
+    // rules (style.css) that hide all app chrome — the surrounding modal header,
+    // buttons and backdrop no longer bleed onto the page.
+    const handlePrintReceipt = () => {
+      document.body.classList.add('printing-receipt');
+      const cleanup = () => {
+        document.body.classList.remove('printing-receipt');
+        window.removeEventListener('afterprint', cleanup);
+      };
+      window.addEventListener('afterprint', cleanup);
+      window.print();
+    };
     const receiptWrap = isFullscreen
-      ? 'mx-auto max-h-full w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-600 dark:bg-slate-900'
-      : 'rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-600 dark:bg-slate-900';
+      ? 'receipt-printable mx-auto max-h-full w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-600 dark:bg-slate-900'
+      : 'receipt-printable rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-600 dark:bg-slate-900';
     return (
       <div className={receiptWrap}>
+        {/* Company logo + name (image already contains the EN/AR wordmark). */}
+        <div className="mb-3 flex justify-center border-b border-slate-200 pb-3 dark:border-slate-700">
+          <img
+            src={brandLogoFull}
+            alt="Aluminum Pearl Co."
+            className="h-20 w-auto object-contain"
+            decoding="async"
+            draggable={false}
+          />
+        </div>
         <div className="border-b border-slate-200 pb-3 text-center dark:border-slate-700">
           <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">{t('salesReceiptTitle')}</p>
           <p className="mt-1 text-lg font-bold text-slate-900 dark:text-slate-100">{receipt.receiptNumber}</p>
@@ -351,7 +376,7 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
             </p>
           )}
         </div>
-        <ul className={`mt-3 space-y-2 text-sm ${isFullscreen ? 'max-h-64' : 'max-h-48'} overflow-y-auto`}>
+        <ul className={`mt-3 space-y-2 text-sm ${isFullscreen ? 'max-h-64' : 'max-h-48'} overflow-y-auto print:max-h-none print:overflow-visible`}>
           {receipt.lines.map((ln, i) => (
             <li key={i} className="border-b border-slate-100 pb-2 dark:border-slate-800">
               <div className="flex justify-between gap-2 font-medium text-slate-800 dark:text-slate-200">
@@ -410,10 +435,10 @@ export const StockTaskFulfillmentPanel: React.FC<StockTaskFulfillmentPanelProps>
             )}
           </div>
         )}
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="no-print mt-4 flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => window.print()}
+            onClick={handlePrintReceipt}
             className="rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700 dark:bg-slate-700"
           >
             {t('salesReceiptPrint')}

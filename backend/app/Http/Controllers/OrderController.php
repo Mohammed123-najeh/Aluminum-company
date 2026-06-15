@@ -234,6 +234,9 @@ class OrderController extends Controller
         if ($order->status !== 'completed') {
             return response()->json(['message' => 'Payment can only be recorded on completed orders'], 400);
         }
+        if ($guard = $this->cancelledGuard($order)) {
+            return $guard;
+        }
 
         $data = $request->validate([
             'amount_paid' => 'required|numeric|min:0',
@@ -298,6 +301,9 @@ class OrderController extends Controller
         }
         if ($order->status !== 'completed' || ! Schema::hasTable('order_payments')) {
             return response()->json(['message' => 'Payment entries are only for completed orders'], 400);
+        }
+        if ($guard = $this->cancelledGuard($order)) {
+            return $guard;
         }
 
         $data = $request->validate([
@@ -365,6 +371,9 @@ class OrderController extends Controller
         }
         if ($order->status !== 'completed' || $order->receipt_number === null) {
             return response()->json(['message' => 'Only issued receipts can be edited here'], 400);
+        }
+        if ($guard = $this->cancelledGuard($order)) {
+            return $guard;
         }
 
         $data = $request->validate([
@@ -477,6 +486,20 @@ class OrderController extends Controller
             $locked->refunded_amount = round((float) ($locked->refunded_amount ?? 0) + $refundNow, 2);
             $locked->save();
 
+            // Cascade a FULL cancellation to the linked task so it shows as cancelled
+            // in the task lists too. Without this, cancelling an order from the Finance
+            // / Orders screen left its task looking pending or in-progress. We never
+            // revert a task that's already completed/cancelled (terminal states).
+            if ($isFullCancellation && $locked->task) {
+                $linkedTask = Task::query()->lockForUpdate()->find($locked->task->id);
+                if ($linkedTask && ! in_array($linkedTask->status, [Task::STATUS_COMPLETED, Task::STATUS_CANCELLED], true)) {
+                    $linkedTask->status = Task::STATUS_CANCELLED;
+                    $linkedTask->cancelled_at = $now;
+                    $linkedTask->cancellation_reason = $data['reason'] ?? null;
+                    $linkedTask->save();
+                }
+            }
+
             $this->syncLinkedCustomerInvoicesAfterCancellation($locked, $cancelledNow, $isFullCancellation, $data['reason'] ?? null);
             $this->syncOrderRefundTransaction($locked, $user);
 
@@ -484,6 +507,20 @@ class OrderController extends Controller
 
             return response()->json($this->orderToArray($locked->fresh()));
         });
+    }
+
+    /**
+     * Returns a 422 response if the order is (fully) cancelled, otherwise null.
+     * A fully-cancelled order is a closed financial record — no payments, receipt
+     * edits or other mutations are allowed. Partial cancellations keep status
+     * 'completed' and remain payable on the reduced balance, so they pass.
+     */
+    private function cancelledGuard(Order $order): ?\Illuminate\Http\JsonResponse
+    {
+        if ($order->status === 'cancelled' || $order->cancellation_type === 'full') {
+            return response()->json(['message' => 'This order is cancelled and can no longer be modified'], 422);
+        }
+        return null;
     }
 
     private function userCanViewOrder(User $user, Order $order): bool

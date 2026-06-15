@@ -53,8 +53,15 @@ body {
   }
   /* Receipt-only print: when `printing-receipt` is on <body>, hide
    * everything except the receipt card so the print shows just the voucher
-   * (no backdrop, no app chrome). The card is then pinned to the page. */
+   * (no backdrop, no app chrome). The card is then pinned to the page.
+   *
+   * Direct body children that don't contain the receipt are hidden outright.
+   * Chrome that sits *inside* the same modal as the receipt (backdrop, header,
+   * action buttons) is hidden via the `.no-print` class on those elements. */
   body.printing-receipt > *:not(:has(.receipt-printable)) {
+    display: none !important;
+  }
+  body.printing-receipt .no-print {
     display: none !important;
   }
   body.printing-receipt .receipt-printable {
@@ -66,7 +73,14 @@ body {
     color: #000 !important;
     width: 100% !important;
     max-width: none !important;
+    overflow: visible !important;
+    max-height: none !important;
     z-index: 9999 !important;
+  }
+  /* Keep the receipt logo crisp — browsers may strip colors when printing. */
+  body.printing-receipt .receipt-printable img {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }
 

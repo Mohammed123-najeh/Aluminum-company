@@ -48,8 +48,11 @@ export const RecordPaymentModal: React.FC<{
     ordersApi
       .list(token, { receipts_only: true })
       .then((rows) => {
-        // Only orders with a remaining balance need a payment recorded.
-        const open = rows.filter((o) => (o.balanceDue ?? 0) > 0.009);
+        // Only orders with a remaining balance need a payment recorded, and a
+        // fully-cancelled order is a closed record — never collect against it.
+        const open = rows.filter(
+          (o) => (o.balanceDue ?? 0) > 0.009 && o.status !== 'cancelled' && o.cancellationType !== 'full',
+        );
         // Most recently touched first — finance usually wants the latest sale.
         open.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
         setOrders(open);
