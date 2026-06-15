@@ -121,10 +121,11 @@ class HrCenterController extends Controller
             ];
         }
 
-        // Dept distribution
+        // Dept distribution. Use single quotes for the fallback string literal:
+        // double quotes mean an identifier in SQLite/Postgres and would error there.
         $byDept = User::where('role', '!=', 'admin')
             ->where('status', 'active')
-            ->selectRaw('COALESCE(department, employee_type, "—") as label, COUNT(*) as count')
+            ->selectRaw("COALESCE(department, employee_type, '—') as label, COUNT(*) as count")
             ->groupBy('label')->get()
             ->map(fn ($r) => ['label' => $r->label, 'count' => (int) $r->count]);
 

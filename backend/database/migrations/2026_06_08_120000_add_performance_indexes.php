@@ -2,7 +2,6 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -21,11 +20,19 @@ use Illuminate\Support\Facades\Schema;
  *    directions; the single-column FK indexes can't serve the ordered pair lookup.
  */
 return new class extends Migration {
+    /** Names of existing indexes on a table — portable across MySQL/SQLite/Postgres. */
+    private function indexNames(string $table): array
+    {
+        // Schema::getIndexListing() uses the driver's own schema introspection,
+        // unlike the raw "SHOW INDEX" (MySQL-only) this previously relied on, which
+        // errored on the SQLite database used for local dev.
+        return array_map('strtolower', Schema::getIndexListing($table));
+    }
+
     /** Add an index only if a same-named one doesn't already exist (safe re-runs). */
     private function addIndex(string $table, array $columns, string $name): void
     {
-        $exists = collect(DB::select("SHOW INDEX FROM `{$table}`"))->contains(fn ($row) => $row->Key_name === $name);
-        if (! $exists) {
+        if (! in_array(strtolower($name), $this->indexNames($table), true)) {
             Schema::table($table, fn (Blueprint $t) => $t->index($columns, $name));
         }
     }
@@ -46,8 +53,7 @@ return new class extends Migration {
     /** Drop an index only if it exists. */
     private function dropIndex(string $table, string $name): void
     {
-        $exists = collect(DB::select("SHOW INDEX FROM `{$table}`"))->contains(fn ($row) => $row->Key_name === $name);
-        if ($exists) {
+        if (in_array(strtolower($name), $this->indexNames($table), true)) {
             Schema::table($table, fn (Blueprint $t) => $t->dropIndex($name));
         }
     }

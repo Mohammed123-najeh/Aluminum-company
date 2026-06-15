@@ -35,6 +35,27 @@ class FinanceCenterController extends Controller
         return null;
     }
 
+    /**
+     * SQL expression that buckets a date column into a "YYYY-MM" string, using
+     * the active driver's own function. MySQL's DATE_FORMAT is not portable and
+     * throws on SQLite (local dev / database.sqlite) and Postgres, so we branch.
+     *
+     * $column is interpolated into raw SQL, so restrict it to a bare identifier.
+     */
+    private function monthBucketExpr(string $column): string
+    {
+        if (! preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $column)) {
+            throw new \InvalidArgumentException("Unsafe column name: {$column}");
+        }
+
+        return match (DB::connection()->getDriverName()) {
+            'sqlite' => "strftime('%Y-%m', {$column})",
+            'pgsql' => "to_char({$column}, 'YYYY-MM')",
+            'sqlsrv' => "FORMAT({$column}, 'yyyy-MM')",
+            default => "DATE_FORMAT({$column}, '%Y-%m')", // mysql / mariadb
+        };
+    }
+
     public function dashboard(Request $request)
     {
         if ($r = $this->gate($request)) return $r;
@@ -77,10 +98,14 @@ class FinanceCenterController extends Controller
         // 12-month trend — two grouped queries (revenue + expenses) instead of 24
         // per-month SUM round-trips. Buckets for empty months are filled with 0 below.
         $trendStart = $now->copy()->subMonths(11)->startOfMonth();
+        // Group by "YYYY-MM" using each driver's own date function: DATE_FORMAT is
+        // MySQL-only and errors on SQLite (used for local dev / database.sqlite),
+        // so pick the portable equivalent based on the active connection.
+        $monthExpr = $this->monthBucketExpr('date');
         $monthlyTotals = FinanceTransaction::query()
             ->whereIn('type', ['revenue', 'payment'])
             ->where('date', '>=', $trendStart)
-            ->selectRaw("type, DATE_FORMAT(date, '%Y-%m') as ym, SUM(amount) as total")
+            ->selectRaw("type, {$monthExpr} as ym, SUM(amount) as total")
             ->groupBy('type', 'ym')
             ->get();
 
