@@ -358,8 +358,10 @@ export const CustomOrderModal: React.FC<Props> = ({ employees, onSave, onClose }
 
   return (
     <div className="fixed inset-0 z-50 flex items-stretch justify-center sm:items-center sm:p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} aria-hidden />
-      <div className="relative flex max-h-dvh w-full flex-col overflow-hidden bg-white shadow-2xl dark:bg-slate-800 sm:max-h-[95vh] sm:max-w-5xl sm:rounded-2xl">
+      <div className="no-print absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} aria-hidden />
+      {/* no-print: when the nested invoice modal triggers printing, the global
+          print rule hides this live form so only the invoice prints. */}
+      <div className="no-print relative flex max-h-dvh w-full flex-col overflow-hidden bg-white shadow-2xl dark:bg-slate-800 sm:max-h-[95vh] sm:max-w-5xl sm:rounded-2xl">
         {/* Header */}
         <div className="flex shrink-0 items-start justify-between gap-4 bg-linear-to-r from-violet-600 via-fuchsia-500 to-rose-500 px-6 py-4 text-white">
           <div className="flex items-start gap-3">
@@ -1125,7 +1127,7 @@ const CardBuilderPanel: React.FC<{
   const inputCls = 'w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-400/20 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100';
 
   return (
-    <div className="fixed inset-0 z-60 flex">
+    <div className="no-print fixed inset-0 z-60 flex">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} aria-hidden />
       <div className="relative ms-auto flex h-full w-full max-w-xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-slate-800">
         {/* Header */}

@@ -56,9 +56,12 @@ body {
    * (no backdrop, no app chrome). The card is then pinned to the page.
    *
    * Direct body children that don't contain the receipt are hidden outright.
+   * The `:not(.receipt-printable)` guard matters when the printable is portaled
+   * to <body> as its OWN direct child (it has no `.receipt-printable` descendant,
+   * so `:has()` — which matches descendants only — would otherwise hide it).
    * Chrome that sits *inside* the same modal as the receipt (backdrop, header,
    * action buttons) is hidden via the `.no-print` class on those elements. */
-  body.printing-receipt > *:not(:has(.receipt-printable)) {
+  body.printing-receipt > *:not(:has(.receipt-printable)):not(.receipt-printable) {
     display: none !important;
   }
   body.printing-receipt .no-print {
@@ -81,6 +84,16 @@ body {
   body.printing-receipt .receipt-printable img {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+  /* Multi-page custom-order invoice: the single-page receipt rule above pins the
+   * card to position:fixed, which clips everything past page 1. A multi-card
+   * invoice must paginate in normal flow, so override the pin for this variant. */
+  body.printing-receipt .receipt-printable.invoice-flow {
+    position: static !important;
+    inset: auto !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    max-height: none !important;
   }
 }
 

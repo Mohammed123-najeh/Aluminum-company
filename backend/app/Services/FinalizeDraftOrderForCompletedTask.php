@@ -72,6 +72,39 @@ class FinalizeDraftOrderForCompletedTask
         });
     }
 
+    /**
+     * Finalize a freshly-minted custom-order draft *at creation time* so its money
+     * (total + any down-payment) is immediately visible to the accountant's Orders
+     * + Receipts pipeline / Finance — bespoke manufacturing can take weeks, but the
+     * receivable and the deposit must be tracked the moment the order is taken.
+     *
+     * Only acts on a draft that carries a positive total (the custom-order shape).
+     * Stock-fulfilled orders keep their items-driven completion path untouched.
+     */
+    public function finalizeCustomOrderNow(Order $order, ?int $clientId = null): void
+    {
+        DB::transaction(function () use ($order, $clientId) {
+            $locked = Order::query()->lockForUpdate()->find($order->id);
+            if (! $locked || $locked->status !== 'draft') {
+                return;
+            }
+            if (($locked->total_amount ?? 0) <= 0) {
+                return;
+            }
+
+            $locked->currency = 'ILS';
+            $locked->receipt_number = $locked->receipt_number ?? $this->nextReceiptNumber();
+            $locked->status = 'completed';
+            if ($clientId !== null) {
+                $locked->client_id = $clientId;
+            }
+            if ($locked->amount_paid === null) {
+                $locked->amount_paid = 0;
+            }
+            $locked->save();
+        });
+    }
+
     private function nextReceiptNumber(): string
     {
         $prefix = 'RCP-'.date('Y').'-';

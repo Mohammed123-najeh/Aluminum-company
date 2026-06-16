@@ -106,6 +106,10 @@ class TaskController extends Controller
                 'amount_paid' => $amountPaid ?? 0,
                 'currency' => 'ILS',
             ]);
+            // Finalize it right away (receipt number + completed) so the custom order's
+            // total and down-payment appear in Finance immediately — bespoke production
+            // can run for weeks, but the accountant must track the money from day one.
+            app(FinalizeDraftOrderForCompletedTask::class)->finalizeCustomOrderNow($newOrder, $data['client_id'] ?? null);
             $orderId = $newOrder->id;
         }
 
