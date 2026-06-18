@@ -60,10 +60,13 @@ class FinanceCenterController extends Controller
     {
         if ($r = $this->gate($request)) return $r;
 
-        // The dashboard runs a dozen aggregate queries; the figures are fine to be up
-        // to a minute stale on a summary screen. Cache the assembled payload so rapid
-        // re-opens / multiple viewers hit memory instead of recomputing every time.
-        $payload = Cache::remember('finance.dashboard.v1', now()->addSeconds(60), function () {
+        // The dashboard runs a dozen aggregate queries; cache the assembled payload so
+        // rapid re-opens / multiple viewers hit memory instead of recomputing every time.
+        // Model-event hooks (AppServiceProvider) bust this key the instant a payment /
+        // expense / order changes, so the cards stay live. The short TTL is only a safety
+        // net: if a bust is ever missed (e.g. a cross-process file-cache race), the money
+        // figures self-correct within a few seconds instead of staying stale for a minute.
+        $payload = Cache::remember('finance.dashboard.v1', now()->addSeconds(5), function () {
             return $this->buildDashboardPayload();
         });
 

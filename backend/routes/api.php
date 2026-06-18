@@ -77,6 +77,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/orders/{order}/payments', [OrderController::class, 'addPayment']);
     Route::patch('/orders/{order}/receipt-meta', [OrderController::class, 'updateReceiptMeta']);
     Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
+    Route::post('/orders/{order}/uncancel', [OrderController::class, 'uncancel']);
 
     Route::get('/users', [UserController::class, 'index']);
     Route::post('/users', [UserController::class, 'store']);

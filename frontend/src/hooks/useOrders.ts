@@ -103,6 +103,16 @@ export function useOrders() {
     [token],
   );
 
+  const uncancelOrder = useCallback(
+    async (id: string) => {
+      if (!token) return undefined;
+      const updated = await ordersApi.uncancel(id, token);
+      setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
+      return updated;
+    },
+    [token],
+  );
+
   const fetchOrderPayments = useCallback(
     async (id: string): Promise<ApiOrderPayment[] | undefined> => {
       if (!token) return undefined;
@@ -121,6 +131,7 @@ export function useOrders() {
     addOrderPayment,
     updateReceiptMeta,
     cancelOrder,
+    uncancelOrder,
     fetchOrderPayments,
     refetch: fetchOrders,
   };

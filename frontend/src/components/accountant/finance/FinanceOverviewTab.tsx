@@ -44,6 +44,17 @@ export const FinanceOverviewTab: React.FC<Props> = ({ onViewAllOrders }) => {
 
   useEffect(() => {
     void load();
+    // Refetch when the window/tab regains focus so the KPI cards reflect a payment
+    // or expense the user just recorded elsewhere, without waiting for a remount.
+    const onFocus = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
   }, [load]);
 
   if (loading && !data) return <p className="text-sm text-slate-500">{t('fin.common.loading')}</p>;

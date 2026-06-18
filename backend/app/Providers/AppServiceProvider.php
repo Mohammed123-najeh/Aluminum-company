@@ -7,6 +7,7 @@ use App\Models\EmployeeDebitRequest;
 use App\Models\Expense;
 use App\Models\FinanceTransaction;
 use App\Models\Order;
+use App\Models\OrderPayment;
 use App\Models\Task;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
@@ -47,13 +48,16 @@ class AppServiceProvider extends ServiceProvider
         };
 
         // Finance figures feed both the finance dashboard and the admin analytics finance KPIs.
+        // Order + OrderPayment are included here too: recording a payment, completing or
+        // cancelling an order changes the dashboard's revenue/receivables/net, so those
+        // cards must refresh at once instead of waiting out the 60s cache TTL.
         $registerBust(
-            [FinanceTransaction::class, CustomerInvoice::class, Expense::class, EmployeeDebitRequest::class],
+            [FinanceTransaction::class, CustomerInvoice::class, Expense::class, EmployeeDebitRequest::class, Order::class, OrderPayment::class],
             ['finance.dashboard.v1', 'admin.analytics.v1'],
         );
-        // Task/order/user counts feed only the admin analytics payload.
+        // Task/user counts feed only the admin analytics payload.
         $registerBust(
-            [Order::class, Task::class, User::class],
+            [Task::class, User::class],
             ['admin.analytics.v1'],
         );
     }

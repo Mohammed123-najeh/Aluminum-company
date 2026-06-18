@@ -91,7 +91,7 @@ export const SupervisorPage: React.FC<Props> = ({ onLogout, initialAiShareToken,
   const [selectedReceiverId, setSelectedReceiverId] = useState<string | null>(null);
   const messages = useMessages(selectedReceiverId);
   const { tasks, loading: tasksLoading, error: tasksError, createTask, updateTask, deleteTask, cancelTask, refetch: refetchTasks } = useTasks();
-  const { orders, loading: ordersLoading, error: ordersError, cancelOrder } = useOrders();
+  const { orders, loading: ordersLoading, error: ordersError, cancelOrder, uncancelOrder } = useOrders();
 
   const initials = adminProfile.name
     .split(' ')
@@ -374,7 +374,7 @@ export const SupervisorPage: React.FC<Props> = ({ onLogout, initialAiShareToken,
             <SupervisorAnalytics employees={employees} tasks={tasks} loading={tasksLoading} error={tasksError} />
           </SectionPanel>
           <SectionPanel active={section === 'orders'}>
-            <SupervisorOrders orders={orders} loading={ordersLoading} error={ordersError} cancelOrder={cancelOrder} />
+            <SupervisorOrders orders={orders} loading={ordersLoading} error={ordersError} cancelOrder={cancelOrder} uncancelOrder={uncancelOrder} />
           </SectionPanel>
           <SectionPanel active={section === 'receipts'}>
             <div className="max-w-4xl space-y-4">

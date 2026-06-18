@@ -8,6 +8,7 @@ type Props = {
   loading: boolean;
   error: string | null;
   cancelOrder: (id: string, payload: { type: 'full' | 'partial'; item_ids?: string[]; reason?: string | null }) => Promise<ApiOrder | undefined>;
+  uncancelOrder?: (id: string) => Promise<ApiOrder | undefined>;
 };
 
 function customerName(order: ApiOrder): string {
@@ -24,11 +25,27 @@ function cancellationLabel(order: ApiOrder, isAr: boolean): string | null {
   return null;
 }
 
-export const SupervisorOrders: React.FC<Props> = ({ orders, loading, error, cancelOrder }) => {
+export const SupervisorOrders: React.FC<Props> = ({ orders, loading, error, cancelOrder, uncancelOrder }) => {
   const { t, lang } = useApp();
   const isAr = lang === 'ar';
   const [detail, setDetail] = useState<ApiOrder | null>(null);
   const [cancelTarget, setCancelTarget] = useState<ApiOrder | null>(null);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+
+  const handleRestore = async (order: ApiOrder) => {
+    if (!uncancelOrder) return;
+    const ok = window.confirm(isAr
+      ? 'تراجع عن الإلغاء واستعادة هذه الطلبية إلى حالتها السابقة؟'
+      : 'Undo the cancellation and restore this order to its previous state?');
+    if (!ok) return;
+    setRestoringId(order.id);
+    try {
+      const updated = await uncancelOrder(order.id);
+      if (updated) setDetail((cur) => (cur?.id === updated.id ? updated : cur));
+    } finally {
+      setRestoringId(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -130,6 +147,17 @@ export const SupervisorOrders: React.FC<Props> = ({ orders, loading, error, canc
                       className="rounded-lg border border-rose-200 bg-rose-600 px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-rose-700 dark:border-rose-900"
                     >
                       {isAr ? 'إلغاء الطلبية' : 'Cancel order'}
+                    </button>
+                  )}
+                  {/* Undo a full cancellation — restores the order + its task. */}
+                  {(order.status === 'cancelled' || order.cancellationType === 'full') && uncancelOrder && (
+                    <button
+                      type="button"
+                      disabled={restoringId === order.id}
+                      onClick={() => void handleRestore(order)}
+                      className="rounded-lg border border-emerald-200 bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 dark:border-emerald-900"
+                    >
+                      {restoringId === order.id ? '…' : isAr ? 'تراجع عن الإلغاء' : 'Undo cancellation'}
                     </button>
                   )}
                 </div>

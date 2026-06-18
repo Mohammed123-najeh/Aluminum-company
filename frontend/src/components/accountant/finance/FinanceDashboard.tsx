@@ -25,7 +25,20 @@ export const FinanceDashboard: React.FC = () => {
     }
   }, [token]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    // Refresh the KPI cards when the tab regains focus so a payment/expense recorded
+    // elsewhere shows immediately instead of waiting for a remount.
+    const onFocus = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [load]);
 
   if (loading && !data) return <p className="text-sm text-slate-500">{t('fin.common.loading')}</p>;
   if (err) return <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</div>;

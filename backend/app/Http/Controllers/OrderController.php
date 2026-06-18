@@ -529,6 +529,104 @@ class OrderController extends Controller
     }
 
     /**
+     * Undo a FULL cancellation — restore the order (and its linked task) to its
+     * pre-cancellation state. The cancellation audit kept the figures we need:
+     * cancelled_amount = the old total, refunded_amount = the old amount paid. We
+     * re-activate the items, re-recognise the previously-refunded revenue, restore
+     * the invoices, and flip the task back to in-progress.
+     */
+    public function uncancel(Request $request, Order $order)
+    {
+        $user = $request->user();
+        $canUncancel = $user->role === 'admin'
+            || ($user->role === 'supervisor' && ((int) $order->supervisor_id === (int) $user->id || (int) $order->creator_id === (int) $user->id));
+        if (! $canUncancel) {
+            return response()->json(['message' => 'Only the owning supervisor or an admin can restore this order'], 403);
+        }
+        if ($order->status !== 'cancelled' && $order->cancellation_type !== 'full') {
+            return response()->json(['message' => 'Only a fully-cancelled order can be restored'], 422);
+        }
+
+        return DB::transaction(function () use ($order, $user) {
+            $locked = Order::query()->lockForUpdate()->with('items')->find($order->id);
+            if (! $locked) {
+                return response()->json(['message' => 'Order no longer exists'], 410);
+            }
+            if ($locked->status !== 'cancelled' && $locked->cancellation_type !== 'full') {
+                return response()->json(['message' => 'Order is not cancelled'], 422);
+            }
+
+            $now = now();
+            $restoredTotal = round((float) ($locked->cancelled_amount ?? 0), 2);
+            $restoredPaid = round((float) ($locked->refunded_amount ?? 0), 2);
+
+            // Re-activate every cancelled item.
+            foreach ($locked->items as $item) {
+                if ($item->is_cancelled) {
+                    $item->is_cancelled = false;
+                    $item->cancelled_amount = 0;
+                    $item->cancelled_at = null;
+                    $item->cancelled_by = null;
+                    $item->cancellation_reason = null;
+                    $item->save();
+                }
+            }
+
+            // Re-recognise the refunded cash as revenue (positive payment reverses the
+            // negative refund payment recorded at cancellation).
+            if ($restoredPaid > 0.009 && Schema::hasTable('order_payments')) {
+                $restorePayment = OrderPayment::create([
+                    'order_id' => $locked->id,
+                    'amount' => $restoredPaid,
+                    'paid_at' => $now,
+                    'recorded_by' => $user->id,
+                    'note' => 'Cancellation reversed — order restored',
+                ]);
+                app(\App\Services\OrderRevenueRecorder::class)->recordPayment($locked, $restorePayment);
+            }
+
+            $locked->total_amount = $restoredTotal;
+            $locked->amount_paid = $restoredPaid;
+            $locked->status = 'completed';
+            $locked->cancellation_type = null;
+            $locked->cancelled_at = null;
+            $locked->cancelled_by = null;
+            $locked->cancellation_reason = null;
+            $locked->cancelled_amount = 0;
+            $locked->refunded_amount = 0;
+            $locked->save();
+
+            // Restore linked customer invoices that were cancelled.
+            CustomerInvoice::query()
+                ->where('order_id', $locked->id)
+                ->where('status', CustomerInvoice::STATUS_CANCELLED)
+                ->update([
+                    'total' => $restoredTotal,
+                    'paid' => $restoredPaid,
+                    'balance' => round(max(0, $restoredTotal - $restoredPaid), 2),
+                    'status' => $restoredPaid >= $restoredTotal - 0.009
+                        ? CustomerInvoice::STATUS_PAID
+                        : ($restoredPaid > 0.009 ? CustomerInvoice::STATUS_PARTIAL : CustomerInvoice::STATUS_SENT),
+                ]);
+
+            // Re-activate the linked task (back to in-progress) if it was cancelled.
+            if ($locked->task) {
+                $linkedTask = Task::query()->lockForUpdate()->find($locked->task->id);
+                if ($linkedTask && $linkedTask->status === Task::STATUS_CANCELLED) {
+                    $linkedTask->status = Task::STATUS_IN_PROGRESS;
+                    $linkedTask->cancelled_at = null;
+                    $linkedTask->cancellation_reason = null;
+                    $linkedTask->save();
+                }
+            }
+
+            $locked->load(['items.profile.category', 'items.color', 'creator:id,name', 'supervisor:id,name', 'client:id,name,phone,email', 'task:id,title,order_id,customer_name,client_id', 'cancelledBy:id,name']);
+
+            return response()->json($this->orderToArray($locked->fresh()));
+        });
+    }
+
+    /**
      * Returns a 422 response if the order is (fully) cancelled, otherwise null.
      * A fully-cancelled order is a closed financial record — no payments, receipt
      * edits or other mutations are allowed. Partial cancellations keep status
