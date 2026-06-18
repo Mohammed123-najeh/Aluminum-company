@@ -65,6 +65,11 @@ class FinalizeDraftOrderForCompletedTask
             $order->receipt_number = $this->nextReceiptNumber();
             $order->status = 'completed';
             $order->client_id = $task->client_id;
+            // Stamp the customer name onto the order so finance keeps showing it even
+            // if the task is deleted later (only when the order has no name yet).
+            if (! $order->customer_reference && $task->customer_name) {
+                $order->customer_reference = $task->customer_name;
+            }
             if ($order->amount_paid === null) {
                 $order->amount_paid = 0;
             }

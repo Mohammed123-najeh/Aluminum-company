@@ -114,7 +114,9 @@ class SalesTaskFulfillmentController extends Controller
                     'supervisor_id' => $supervisorId,
                     'client_id' => $task->client_id,
                     'status' => 'draft',
-                    'customer_reference' => $data['customer_reference'] ?? null,
+                    // Stamp the task's customer name onto the order so finance keeps it
+                    // even if the task is later deleted.
+                    'customer_reference' => $data['customer_reference'] ?? $task->customer_name,
                 ]);
                 $task->order_id = $order->id;
                 // Only an assignee actually working the task should move it off "pending".
@@ -126,7 +128,7 @@ class SalesTaskFulfillmentController extends Controller
                 $task->save();
             }
 
-            $order->customer_reference = $data['customer_reference'] ?? $order->customer_reference;
+            $order->customer_reference = $data['customer_reference'] ?? $order->customer_reference ?? $task->customer_name;
             $order->save();
 
             $grand = 0.0;

@@ -113,7 +113,10 @@ class OrderController extends Controller
                     return response()->json(['message' => 'Task does not match this order scope'], 403);
                 }
 
-                $existingOrder->customer_reference = $data['customer_reference'] ?? null;
+                // Persist the customer name onto the order so it survives even if the
+                // linked task is later deleted (finance reads the name from the order,
+                // falling back to the task only when the order has none).
+                $existingOrder->customer_reference = $data['customer_reference'] ?? $task->customer_name ?? $existingOrder->customer_reference;
                 $existingOrder->save();
                 $existingOrder->items()->delete();
                 foreach ($data['items'] as $item) {
@@ -139,7 +142,9 @@ class OrderController extends Controller
             'supervisor_id' => $user->role === 'supervisor' ? $user->id : $user->supervisor_id,
             'client_id' => $taskForClient?->client_id,
             'status' => 'draft',
-            'customer_reference' => $data['customer_reference'] ?? null,
+            // Keep the customer name on the order itself so deleting the task never
+            // blanks the customer column in Finance.
+            'customer_reference' => $data['customer_reference'] ?? $taskForClient?->customer_name,
         ]);
 
         foreach ($data['items'] as $item) {

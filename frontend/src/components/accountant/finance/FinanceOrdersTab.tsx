@@ -4,6 +4,7 @@ import { ordersApi, type ApiOrder, type ApiOrderPayment } from '../../../service
 import { formatIls } from '../../../utils/currency';
 import { StatusBadge } from '../../shared/dash';
 import { RecordPaymentModal } from './modals/RecordPaymentModal';
+import { AnalyticsDateFilter, type AnalyticsRange } from '../../admin/AnalyticsDateFilter';
 
 type PaymentFilter = 'all' | 'paid' | 'partial' | 'unpaid' | 'cancelled';
 
@@ -21,6 +22,7 @@ export const FinanceOrdersTab: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<PaymentFilter>('all');
+  const [dateRange, setDateRange] = useState<AnalyticsRange>(null);
   const [recordTargetId, setRecordTargetId] = useState<string | null>(null);
   const [detailTarget, setDetailTarget] = useState<ApiOrder | null>(null);
 
@@ -62,6 +64,12 @@ export const FinanceOrdersTab: React.FC = () => {
       if (filter === 'cancelled' && !o.cancellationType && o.status !== 'cancelled') return false;
       if (filter !== 'cancelled' && (o.cancellationType || o.status === 'cancelled') && filter !== 'all') return false;
       if (filter !== 'all' && filter !== 'cancelled' && o.paymentStatus !== filter) return false;
+      // Date filter: compare the order's issue date (createdAt) by calendar day so
+      // the range is inclusive on both ends regardless of time-of-day / timezone.
+      if (dateRange) {
+        const day = (o.createdAt ?? '').slice(0, 10);
+        if (!day || day < dateRange.from || day > dateRange.to) return false;
+      }
       if (!q) return true;
       const hay = [o.id, o.clientName, o.taskCustomerName, o.customerReference, o.receiptNumber]
         .filter(Boolean)
@@ -69,7 +77,7 @@ export const FinanceOrdersTab: React.FC = () => {
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [orders, search, filter]);
+  }, [orders, search, filter, dateRange]);
 
   const onPaymentRecorded = () => {
     setRecordTargetId(null);
@@ -102,6 +110,11 @@ export const FinanceOrdersTab: React.FC = () => {
               <option value="cancelled">{isAr ? 'ملغي' : 'Cancelled'}</option>
             </select>
           </div>
+        </div>
+
+        {/* Date filter: presets (today / this week / this month / …) + custom range. */}
+        <div className="mb-4">
+          <AnalyticsDateFilter value={dateRange} onChange={setDateRange} />
         </div>
 
         {error && (
@@ -155,7 +168,7 @@ export const FinanceOrdersTab: React.FC = () => {
                     <tr key={o.id} className={`${isCancelled ? 'bg-rose-50/70 text-rose-900 dark:bg-rose-950/20 dark:text-rose-100' : 'text-slate-700 dark:text-slate-300'}`}>
                       <td className="py-3 font-semibold text-slate-900 dark:text-slate-100">{o.receiptNumber ?? `ORD-${o.id}`}</td>
                       <td className="py-3">{o.clientName ?? o.taskCustomerName ?? o.customerReference ?? '—'}</td>
-                      <td className="py-3 text-xs text-slate-500">{new Date(o.updatedAt).toISOString().slice(0, 10)}</td>
+                      <td className="py-3 text-xs text-slate-500">{(o.createdAt ?? o.updatedAt).slice(0, 10)}</td>
                       <td className="py-3 text-end tabular-nums">{formatIls(total)}</td>
                       <td className="py-3 text-end tabular-nums text-emerald-600 dark:text-emerald-400">{formatIls(paid)}</td>
                       <td className="py-3 text-end tabular-nums text-rose-600 dark:text-rose-400">{formatIls(remaining)}</td>
