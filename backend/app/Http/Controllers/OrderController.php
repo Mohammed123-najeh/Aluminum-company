@@ -44,8 +44,14 @@ class OrderController extends Controller
         $orders = $query->orderBy('updated_at', 'desc')->get();
 
         if ($request->boolean('receipts_only')) {
+            // Completed orders need an issued receipt number to count as a receipt.
+            // Cancelled orders, however, must always surface in Finance (greyed-out,
+            // read-only, marked "cancelled") even when the linked task was cancelled
+            // while still a draft — those never got a receipt number, and excluding
+            // them is exactly why cancelled orders previously vanished from Finance.
             $orders = $orders
-                ->filter(fn (Order $o) => in_array($o->status, ['completed', 'cancelled'], true) && $o->receipt_number !== null)
+                ->filter(fn (Order $o) => $o->status === 'cancelled'
+                    || ($o->status === 'completed' && $o->receipt_number !== null))
                 ->values();
         }
 

@@ -13,6 +13,7 @@ class AdminSeeder extends Seeder
         // Must match login placeholder in frontend (translations: admin@factory.com).
         $devPassword = Hash::make('12345678');
 
+        // Single admin account for a clean system.
         User::updateOrCreate(
             ['email' => 'admin@factory.com'],
             [
@@ -21,17 +22,6 @@ class AdminSeeder extends Seeder
                 'role'     => 'admin',
                 'status'   => 'active',
             ]
-        );
-
-        User::updateOrCreate(
-            ['email' => 'mohammed@gmail.com'],
-            [
-                'name'     => 'Mohammed',
-                'password' => $devPassword,
-                'role'     => 'admin',
-                'status'   => 'active',
-            ]
-            
         );
     }
 }
