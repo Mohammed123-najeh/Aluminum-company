@@ -268,13 +268,14 @@ class OrderController extends Controller
         $newPaid = (float) ($order->amount_paid ?? 0);
         $diff = round($newPaid - $prevPaid, 2);
         if (Schema::hasTable('order_payments') && $diff > 0.009) {
-            OrderPayment::create([
+            $payment = OrderPayment::create([
                 'order_id' => $order->id,
                 'amount' => $diff,
                 'paid_at' => now(),
                 'recorded_by' => $user->id,
                 'note' => 'Adjusted via legacy update payment',
             ]);
+            app(\App\Services\OrderRevenueRecorder::class)->recordPayment($order, $payment);
         }
 
         $order->load(['items.profile.category', 'items.color', 'creator:id,name', 'supervisor:id,name', 'client:id,name,phone,email', 'task:id,title,order_id,customer_name,client_id']);
@@ -361,6 +362,9 @@ class OrderController extends Controller
             ]);
             $order->amount_paid = round((float) ($order->amount_paid ?? 0) + $add, 2);
             $order->save();
+            // Bridge the collected cash into the Finance ledger as revenue so the
+            // dashboard's revenue/net actually reflect this payment.
+            app(\App\Services\OrderRevenueRecorder::class)->recordPayment($order, $payment);
             $order->load(['items.profile.category', 'items.color', 'creator:id,name', 'supervisor:id,name', 'client:id,name,phone,email', 'task:id,title,order_id,customer_name,client_id']);
 
             $fresh = $this->orderToArray($order->fresh());
@@ -473,7 +477,7 @@ class OrderController extends Controller
             $refundNow = round(max(0, $oldPaid - $newPaid), 2);
 
             if ($refundNow > 0.009 && Schema::hasTable('order_payments')) {
-                OrderPayment::create([
+                $refundPayment = OrderPayment::create([
                     'order_id' => $locked->id,
                     'amount' => -$refundNow,
                     'paid_at' => $now,
@@ -481,6 +485,9 @@ class OrderController extends Controller
                     'note' => ($isFullCancellation ? 'Full order refund' : 'Partial order refund')
                         . (! empty($data['reason']) ? ': '.$data['reason'] : ''),
                 ]);
+                // Reverse the recognised revenue (negative revenue row) so net drops
+                // by the refunded amount — refunds reduce revenue, not raise expenses.
+                app(\App\Services\OrderRevenueRecorder::class)->recordPayment($locked, $refundPayment);
             }
 
             $locked->total_amount = $newTotal;
@@ -512,7 +519,8 @@ class OrderController extends Controller
             }
 
             $this->syncLinkedCustomerInvoicesAfterCancellation($locked, $cancelledNow, $isFullCancellation, $data['reason'] ?? null);
-            $this->syncOrderRefundTransaction($locked, $user);
+            // Refund is recorded as a negative-revenue row via the refund OrderPayment
+            // above (cash-basis), so we no longer emit a separate expense-type refund tx.
 
             $locked->load(['items.profile.category', 'items.color', 'creator:id,name', 'supervisor:id,name', 'client:id,name,phone,email', 'task:id,title,order_id,customer_name,client_id', 'cancelledBy:id,name']);
 
@@ -574,31 +582,6 @@ class OrderController extends Controller
                 : $note;
             $invoice->save();
         }
-    }
-
-    private function syncOrderRefundTransaction(Order $order, User $user): void
-    {
-        $refunded = round((float) ($order->refunded_amount ?? 0), 2);
-        if ($refunded <= 0.009) {
-            return;
-        }
-
-        FinanceTransaction::updateOrCreate(
-            ['ref_type' => 'order_cancellation', 'ref_id' => $order->id, 'type' => FinanceTransaction::TYPE_PAYMENT],
-            [
-                'source' => 'customer_refund',
-                'party_type' => 'client',
-                'party_id' => $order->client_id,
-                'party_name' => $order->client?->name ?? $order->task?->customer_name ?? $order->customer_reference,
-                'amount' => $refunded,
-                'method' => 'refund',
-                'reference_no' => $order->receipt_number ? 'REF-'.$order->receipt_number : 'REF-ORD-'.$order->id,
-                'date' => now()->toDateString(),
-                'notes' => $order->cancellation_reason,
-                'status' => 'completed',
-                'created_by' => $user->id,
-            ]
-        );
     }
 
     private function orderToArray(Order $order): array

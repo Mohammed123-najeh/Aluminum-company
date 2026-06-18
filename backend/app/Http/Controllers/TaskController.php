@@ -410,7 +410,7 @@ class TaskController extends Controller
                     $oldTotal = round((float) ($order->total_amount ?? 0), 2);
                     $paid = (float) ($order->amount_paid ?? 0);
                     if ($paid > 0.009 && Schema::hasTable('order_payments')) {
-                        OrderPayment::create([
+                        $refundPayment = OrderPayment::create([
                             'order_id' => $order->id,
                             'amount' => -round($paid, 2),
                             'paid_at' => now(),
@@ -418,6 +418,9 @@ class TaskController extends Controller
                             'note' => 'Refund — task cancelled' . (! empty($data['reason']) ? ': ' . $data['reason'] : ''),
                         ]);
                         $refundedAmount = round($paid, 2);
+                        // Reverse the recognised revenue (cash-basis): the refund is a
+                        // negative-revenue row, so net drops instead of expenses rising.
+                        app(\App\Services\OrderRevenueRecorder::class)->recordPayment($order, $refundPayment);
                     }
                     foreach ($order->items as $item) {
                         $item->is_cancelled = true;
@@ -434,24 +437,6 @@ class TaskController extends Controller
                             'balance' => 0,
                             'status' => CustomerInvoice::STATUS_CANCELLED,
                         ]);
-                    if ($refundedAmount > 0.009) {
-                        FinanceTransaction::updateOrCreate(
-                            ['ref_type' => 'order_cancellation', 'ref_id' => $order->id, 'type' => FinanceTransaction::TYPE_PAYMENT],
-                            [
-                                'source' => 'customer_refund',
-                                'party_type' => 'client',
-                                'party_id' => $order->client_id,
-                                'party_name' => $order->client?->name ?? $order->customer_reference,
-                                'amount' => $refundedAmount,
-                                'method' => 'refund',
-                                'reference_no' => $order->receipt_number ? 'REF-'.$order->receipt_number : 'REF-ORD-'.$order->id,
-                                'date' => now()->toDateString(),
-                                'notes' => $data['reason'] ?? null,
-                                'status' => 'completed',
-                                'created_by' => $user->id,
-                            ]
-                        );
-                    }
                     $order->total_amount = 0;
                     $order->amount_paid = 0;
                     $order->status = 'cancelled';

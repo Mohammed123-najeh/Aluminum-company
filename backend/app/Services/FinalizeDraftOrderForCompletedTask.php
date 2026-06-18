@@ -107,6 +107,13 @@ class FinalizeDraftOrderForCompletedTask
                 $locked->amount_paid = 0;
             }
             $locked->save();
+
+            // Recognise the down-payment as revenue so the custom order's collected
+            // cash shows up in the Finance dashboard immediately.
+            $paid = round((float) ($locked->amount_paid ?? 0), 2);
+            if ($paid > 0.009) {
+                app(OrderRevenueRecorder::class)->recordInitialPaid($locked, $paid, $locked->creator_id);
+            }
         });
     }
 

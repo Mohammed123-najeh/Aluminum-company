@@ -191,6 +191,12 @@ class SalesTaskFulfillmentController extends Controller
             $order->payment_notes = $data['payment_notes'] ?? null;
             $order->save();
 
+            // Recognise the cash collected at fulfillment as revenue so it lands in
+            // the Finance dashboard immediately (cash-basis).
+            if ($initialPaid > 0.009) {
+                app(\App\Services\OrderRevenueRecorder::class)->recordInitialPaid($order, $initialPaid, $user->id);
+            }
+
             // Only the assigned employee actually doing the work should mark the task complete.
             // When a supervisor fulfills stock at creation time (the wizard's Step 2), they're
             // just pre-allocating inventory + issuing a receipt — the task itself stays pending
