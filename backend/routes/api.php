@@ -171,6 +171,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/finance/expenses', [FinanceCenterController::class, 'listExpenses']);
     Route::post('/finance/expenses', [FinanceCenterController::class, 'storeExpense']);
     Route::patch('/finance/expenses/{id}/decide', [FinanceCenterController::class, 'decideExpense']);
+    Route::patch('/finance/expenses/{id}', [FinanceCenterController::class, 'updateExpense']);
     Route::delete('/finance/expenses/{id}', [FinanceCenterController::class, 'deleteExpense']);
 
     Route::get('/finance/customer-invoices', [FinanceCenterController::class, 'listCustomerInvoices']);

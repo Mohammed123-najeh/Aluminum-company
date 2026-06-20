@@ -1,27 +1,33 @@
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../../../../contexts/AppContext';
-import { financeCenterApi, type ApiExpenseCategory } from '../../../../services/api';
+import { financeCenterApi, type ApiExpense, type ApiExpenseCategory } from '../../../../services/api';
 
 /**
- * Header action — "Add expense". Quick expense entry: pick a category
- * (water / electricity / raw materials / maintenance / …), fill description
- * + amount + date, optional supplier + reference, and submit. The expense
- * lands as `status='pending'`; finance can mark it approved/paid from the
- * Expenses tab.
+ * Expense entry modal. Doubles as add + edit:
+ *  - No `expense` prop → "Add expense": fill category / description / amount /
+ *    date / supplier / reference and submit. The expense applies immediately
+ *    (status='paid') and shows in the Overview right away.
+ *  - With `expense` prop → "Edit expense": fields are prefilled and submit
+ *    PATCHes the existing row; the Finance ledger (Overview KPI/net/trend) is
+ *    re-synced server-side so edits flow straight through.
  */
 export const AddExpenseModal: React.FC<{
   onClose: () => void;
   onSuccess?: () => void;
-}> = ({ onClose, onSuccess }) => {
+  expense?: ApiExpense;
+}> = ({ onClose, onSuccess, expense }) => {
   const { t, token, lang } = useApp();
+  const isEdit = !!expense;
   const [categories, setCategories] = useState<ApiExpenseCategory[]>([]);
-  const [categoryId, setCategoryId] = useState<string>('');
-  const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [supplierName, setSupplierName] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'check' | 'card'>('cash');
-  const [referenceNo, setReferenceNo] = useState('');
+  const [categoryId, setCategoryId] = useState<string>(expense?.categoryId ?? '');
+  const [description, setDescription] = useState(expense?.description ?? '');
+  const [amount, setAmount] = useState(expense ? String(expense.amount) : '');
+  const [date, setDate] = useState(expense?.date ?? (() => new Date().toISOString().slice(0, 10)));
+  const [supplierName, setSupplierName] = useState(expense?.supplierName ?? '');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'check' | 'card'>(
+    (expense?.paymentMethod as 'cash' | 'transfer' | 'check' | 'card') ?? 'cash',
+  );
+  const [referenceNo, setReferenceNo] = useState(expense?.referenceNo ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,6 +37,7 @@ export const AddExpenseModal: React.FC<{
       .listExpenseCategories(token)
       .then((rows) => {
         setCategories(rows);
+        // Default to the first category only when adding (no category chosen yet).
         if (rows.length > 0 && !categoryId) setCategoryId(rows[0].id);
       })
       .catch(() => setCategories([]));
@@ -45,7 +52,7 @@ export const AddExpenseModal: React.FC<{
     setSubmitting(true);
     setError(null);
     try {
-      await financeCenterApi.createExpense(token, {
+      const payload = {
         category_id: categoryId,
         description: description.trim(),
         amount: amountNum,
@@ -53,7 +60,12 @@ export const AddExpenseModal: React.FC<{
         supplier_name: supplierName.trim() || undefined,
         payment_method: paymentMethod,
         reference_no: referenceNo.trim() || undefined,
-      });
+      };
+      if (isEdit && expense) {
+        await financeCenterApi.updateExpense(token, expense.id, payload);
+      } else {
+        await financeCenterApi.createExpense(token, payload);
+      }
       onSuccess?.();
       onClose();
     } catch (e) {
@@ -71,8 +83,8 @@ export const AddExpenseModal: React.FC<{
       <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => !submitting && onClose()} aria-hidden />
       <div className="relative w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-900">
         <div className="bg-linear-to-r from-rose-500 to-amber-500 px-5 py-4 text-white">
-          <h2 className="text-base font-bold">{t('fin.expense.modalTitle')}</h2>
-          <p className="mt-0.5 text-xs text-white/80">{t('fin.expense.modalSubtitle')}</p>
+          <h2 className="text-base font-bold">{t(isEdit ? 'fin.expense.editTitle' : 'fin.expense.modalTitle')}</h2>
+          <p className="mt-0.5 text-xs text-white/80">{t(isEdit ? 'fin.expense.editSubtitle' : 'fin.expense.modalSubtitle')}</p>
         </div>
 
         <div className="space-y-3 p-5">
@@ -200,7 +212,7 @@ export const AddExpenseModal: React.FC<{
             disabled={!valid || submitting}
             className="rounded-lg bg-linear-to-r from-rose-500 to-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:from-rose-400 hover:to-amber-400 disabled:opacity-50"
           >
-            {submitting ? '…' : t('fin.expense.submit')}
+            {submitting ? '…' : t(isEdit ? 'fin.expense.update' : 'fin.expense.submit')}
           </button>
         </div>
       </div>

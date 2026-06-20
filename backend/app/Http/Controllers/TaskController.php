@@ -281,6 +281,13 @@ class TaskController extends Controller
             $task->save();
 
             if (isset($data['status']) && $data['status'] === Task::STATUS_CANCELLED && $prevStatus !== Task::STATUS_CANCELLED) {
+                // Cancelling a task via edit must also roll its money back out of
+                // Finance (same as the dedicated cancel endpoint): reverse the linked
+                // order's recognised revenue so the Overview revenue/net drop.
+                DB::transaction(function () use ($task, $user) {
+                    $this->reverseLinkedOrderRevenue($task, $user, $task->cancellation_reason);
+                });
+
                 $task->load('assignees:id,name,email');
                 $body = 'Task #'.$task->id.' was cancelled by your supervisor. You do not need to work on it.';
                 foreach ($task->assignees as $assignee) {
@@ -329,9 +336,21 @@ class TaskController extends Controller
         if ($user->role !== 'supervisor' || (int) $task->supervisor_id !== (int) $user->id) {
             return response()->json(['message' => 'Only the owning supervisor can delete this task'], 403);
         }
-        $task->delete();
 
-        return response()->json(null, 204);
+        return DB::transaction(function () use ($task, $user) {
+            $locked = Task::query()->lockForUpdate()->find($task->id);
+            if (! $locked) {
+                return response()->json(null, 204);
+            }
+            // Deleting a task must roll its money back out of Finance too: cancel the
+            // linked order and reverse any recognised revenue, exactly like cancelling
+            // the task. Without this, deleting a paid task left its revenue stranded in
+            // the Overview (orders.tasks_id is nullOnDelete, so the order would survive).
+            $this->reverseLinkedOrderRevenue($locked, $user, 'Task deleted');
+            $locked->delete();
+
+            return response()->json(null, 204);
+        });
     }
 
     private function userCanAccessTask(User $user, Task $task): bool
@@ -401,55 +420,7 @@ class TaskController extends Controller
             }
             $task = $locked;
 
-            $refundedAmount = 0.0;
-
-            if ($task->order_id) {
-                /** @var Order|null $order */
-                $order = Order::query()->lockForUpdate()->find($task->order_id);
-                if ($order) {
-                    $oldTotal = round((float) ($order->total_amount ?? 0), 2);
-                    $paid = (float) ($order->amount_paid ?? 0);
-                    if ($paid > 0.009 && Schema::hasTable('order_payments')) {
-                        $refundPayment = OrderPayment::create([
-                            'order_id' => $order->id,
-                            'amount' => -round($paid, 2),
-                            'paid_at' => now(),
-                            'recorded_by' => $user->id,
-                            'note' => 'Refund — task cancelled' . (! empty($data['reason']) ? ': ' . $data['reason'] : ''),
-                        ]);
-                        $refundedAmount = round($paid, 2);
-                        // Reverse the recognised revenue (cash-basis): the refund is a
-                        // negative-revenue row, so net drops instead of expenses rising.
-                        app(\App\Services\OrderRevenueRecorder::class)->recordPayment($order, $refundPayment);
-                    }
-                    foreach ($order->items as $item) {
-                        $item->is_cancelled = true;
-                        $item->cancelled_amount = round((float) ($item->line_total ?? 0), 2);
-                        $item->cancelled_at = now();
-                        $item->cancelled_by = $user->id;
-                        $item->cancellation_reason = $data['reason'] ?? null;
-                        $item->save();
-                    }
-                    CustomerInvoice::query()
-                        ->where('order_id', $order->id)
-                        ->update([
-                            'paid' => 0,
-                            'balance' => 0,
-                            'status' => CustomerInvoice::STATUS_CANCELLED,
-                        ]);
-                    $order->total_amount = 0;
-                    $order->amount_paid = 0;
-                    $order->status = 'cancelled';
-                    $order->payment_due_at = null;
-                    $order->cancellation_type = 'full';
-                    $order->cancelled_at = now();
-                    $order->cancelled_by = $user->id;
-                    $order->cancellation_reason = $data['reason'] ?? null;
-                    $order->cancelled_amount = round((float) ($order->cancelled_amount ?? 0) + $oldTotal, 2);
-                    $order->refunded_amount = round((float) ($order->refunded_amount ?? 0) + $refundedAmount, 2);
-                    $order->save();
-                }
-            }
+            $refundedAmount = $this->reverseLinkedOrderRevenue($task, $user, $data['reason'] ?? null);
 
             $task->status = Task::STATUS_CANCELLED;
             $task->cancelled_at = now();
@@ -508,6 +479,77 @@ class TaskController extends Controller
                 'refundedAmount' => $refundedAmount,
             ]);
         });
+    }
+
+    /**
+     * Reverse the Finance impact of a task's linked order when the task is being
+     * cancelled or deleted. Fully cancels the order, refunds any collected cash as
+     * a negative-revenue transaction (cash-basis, so the Overview revenue/net drop
+     * by the refunded amount), cancels its items and linked customer invoices.
+     *
+     * Returns the refunded amount (0 if nothing was paid or there's no linked order).
+     * Must be called inside a DB transaction; locks the order row for update.
+     */
+    private function reverseLinkedOrderRevenue(Task $task, User $user, ?string $reason): float
+    {
+        if (! $task->order_id) {
+            return 0.0;
+        }
+
+        /** @var Order|null $order */
+        $order = Order::query()->lockForUpdate()->with('items')->find($task->order_id);
+        if (! $order || $order->status === 'cancelled') {
+            return 0.0;
+        }
+
+        $oldTotal = round((float) ($order->total_amount ?? 0), 2);
+        $paid = (float) ($order->amount_paid ?? 0);
+        $refundedAmount = 0.0;
+
+        if ($paid > 0.009 && Schema::hasTable('order_payments')) {
+            $refundPayment = OrderPayment::create([
+                'order_id' => $order->id,
+                'amount' => -round($paid, 2),
+                'paid_at' => now(),
+                'recorded_by' => $user->id,
+                'note' => 'Refund — task cancelled' . (! empty($reason) ? ': ' . $reason : ''),
+            ]);
+            $refundedAmount = round($paid, 2);
+            // Reverse the recognised revenue (cash-basis): the refund is a
+            // negative-revenue row, so net drops instead of expenses rising.
+            app(\App\Services\OrderRevenueRecorder::class)->recordPayment($order, $refundPayment);
+        }
+
+        foreach ($order->items as $item) {
+            $item->is_cancelled = true;
+            $item->cancelled_amount = round((float) ($item->line_total ?? 0), 2);
+            $item->cancelled_at = now();
+            $item->cancelled_by = $user->id;
+            $item->cancellation_reason = $reason;
+            $item->save();
+        }
+
+        CustomerInvoice::query()
+            ->where('order_id', $order->id)
+            ->update([
+                'paid' => 0,
+                'balance' => 0,
+                'status' => CustomerInvoice::STATUS_CANCELLED,
+            ]);
+
+        $order->total_amount = 0;
+        $order->amount_paid = 0;
+        $order->status = 'cancelled';
+        $order->payment_due_at = null;
+        $order->cancellation_type = 'full';
+        $order->cancelled_at = now();
+        $order->cancelled_by = $user->id;
+        $order->cancellation_reason = $reason;
+        $order->cancelled_amount = round((float) ($order->cancelled_amount ?? 0) + $oldTotal, 2);
+        $order->refunded_amount = round((float) ($order->refunded_amount ?? 0) + $refundedAmount, 2);
+        $order->save();
+
+        return $refundedAmount;
     }
 
     private function taskToArray(Task $task): array

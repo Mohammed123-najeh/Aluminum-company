@@ -50,8 +50,11 @@ class AttendanceController extends Controller
             $userQuery->where(function ($q) use ($me) {
                 $q->where('supervisor_id', $me->id)->orWhere('id', $me->id);
             });
+        } elseif ($me->isHrStaff()) {
+            // HR staff run payroll, so they see every non-admin employee's salary
+            // row (same scope as admin) — not just their own.
         } elseif ($me->role === 'employee') {
-            // Plain employees (and HR/accountant/sales staff) only see their own row.
+            // Plain employees (and accountant/sales staff) only see their own row.
             $userQuery->where('id', $me->id);
         }
 

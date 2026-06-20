@@ -18,6 +18,8 @@ export const FinanceExpensesTab: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState<ApiExpense | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
   const load = useCallback(async () => {
@@ -43,6 +45,24 @@ export const FinanceExpensesTab: React.FC = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const handleDelete = useCallback(
+    async (id: string) => {
+      if (!token) return;
+      if (!window.confirm(t('fin.expenses.confirmDelete'))) return;
+      setDeletingId(id);
+      setError(null);
+      try {
+        await financeCenterApi.deleteExpense(token, id);
+        await load();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : t('fin.expenses.deleteError'));
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [token, t, load],
+  );
 
   const categoryLabel = (e: ApiExpense): string => {
     if (lang === 'ar') return e.categoryNameAr ?? e.categoryNameEn ?? '—';
@@ -128,6 +148,7 @@ export const FinanceExpensesTab: React.FC = () => {
                   <th className="pb-2 text-end">{t('fin.expenses.colAmount')}</th>
                   <th className="pb-2 text-start">{t('fin.expenses.colStatus')}</th>
                   <th className="pb-2 text-start">{t('fin.expenses.colRecordedBy')}</th>
+                  <th className="pb-2 text-end">{t('fin.expenses.colActions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -141,6 +162,25 @@ export const FinanceExpensesTab: React.FC = () => {
                     </td>
                     <td className="py-3"><StatusBadge status={e.status} /></td>
                     <td className="py-3 text-xs text-slate-500">{e.submittedByName ?? '—'}</td>
+                    <td className="py-3">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setEditing(e)}
+                          className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                        >
+                          {t('fin.common.edit')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(e.id)}
+                          disabled={deletingId === e.id}
+                          className="rounded-md border border-rose-200 px-2 py-1 text-xs font-medium text-rose-600 transition hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                        >
+                          {deletingId === e.id ? '…' : t('fin.common.delete')}
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -154,6 +194,17 @@ export const FinanceExpensesTab: React.FC = () => {
           onClose={() => setShowAdd(false)}
           onSuccess={() => {
             setShowAdd(false);
+            void load();
+          }}
+        />
+      )}
+
+      {editing && (
+        <AddExpenseModal
+          expense={editing}
+          onClose={() => setEditing(null)}
+          onSuccess={() => {
+            setEditing(null);
             void load();
           }}
         />

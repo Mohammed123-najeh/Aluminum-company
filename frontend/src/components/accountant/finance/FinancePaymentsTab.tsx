@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../../contexts/AppContext';
-import { ordersApi } from '../../../services/api';
+import { ordersApi, type ApiOrder, type ApiOrderPayment } from '../../../services/api';
 import { formatIls } from '../../../utils/currency';
 import { RecordPaymentModal } from './modals/RecordPaymentModal';
+import { PaymentReceiptPreview } from './modals/PaymentReceiptPreview';
 
 type Row = {
   paymentId: string;
@@ -28,6 +29,11 @@ export const FinancePaymentsTab: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [showRecord, setShowRecord] = useState(false);
+  // Receipt-to-print: the order + the specific payment for that row. Fetched on
+  // demand when a row's print button is clicked, then rendered as a clean,
+  // print-isolated voucher (PaymentReceiptPreview) instead of printing the page.
+  const [receipt, setReceipt] = useState<{ order: ApiOrder; payment: ApiOrderPayment } | null>(null);
+  const [printingId, setPrintingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -83,6 +89,34 @@ export const FinancePaymentsTab: React.FC = () => {
       [r.receiptNo, r.orderNo, r.customer, r.method].join(' ').toLowerCase().includes(q),
     );
   }, [rows, search]);
+
+  // Open the print-ready voucher for a single payment row. We fetch the live
+  // order (for totals / customer / balance) and the matching payment, then hand
+  // them to PaymentReceiptPreview which isolates itself for printing.
+  const handlePrint = useCallback(
+    async (row: Row) => {
+      if (!token) return;
+      setPrintingId(row.paymentId);
+      setError(null);
+      try {
+        const [order, payments] = await Promise.all([
+          ordersApi.show(row.orderId, token),
+          ordersApi.listPayments(row.orderId, token),
+        ]);
+        const payment = payments.find((p) => String(p.id) === String(row.paymentId));
+        if (!payment) {
+          setError(t('fin.payments.printNotFound'));
+          return;
+        }
+        setReceipt({ order, payment });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : t('fin.payments.printError'));
+      } finally {
+        setPrintingId(null);
+      }
+    },
+    [token, t],
+  );
 
   return (
     <div className="space-y-4">
@@ -149,10 +183,11 @@ export const FinancePaymentsTab: React.FC = () => {
                         <button
                           type="button"
                           title={t('fin.payments.printAction')}
-                          onClick={() => window.print()}
-                          className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                          onClick={() => void handlePrint(r)}
+                          disabled={printingId === r.paymentId}
+                          className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
                         >
-                          🖨 {t('fin.payments.printAction')}
+                          {printingId === r.paymentId ? '…' : `🖨 ${t('fin.payments.printAction')}`}
                         </button>
                       </td>
                     </tr>
@@ -171,6 +206,15 @@ export const FinancePaymentsTab: React.FC = () => {
             setShowRecord(false);
             void load();
           }}
+        />
+      )}
+
+      {receipt && (
+        <PaymentReceiptPreview
+          order={receipt.order}
+          payment={receipt.payment}
+          onPrint={() => setReceipt(null)}
+          onSkip={() => setReceipt(null)}
         />
       )}
     </div>

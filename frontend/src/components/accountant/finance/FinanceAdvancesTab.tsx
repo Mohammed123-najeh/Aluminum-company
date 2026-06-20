@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../../contexts/AppContext';
-import { debitRequestsApi, type ApiDebitRequest } from '../../../services/api';
+import { financeCenterApi, type ApiDebitRequest } from '../../../services/api';
 import { formatIls } from '../../../utils/currency';
 import { StatusBadge } from '../../shared/dash';
 
@@ -21,7 +21,9 @@ export const FinanceAdvancesTab: React.FC = () => {
     setError(null);
     try {
       // Show only approved advances — those are the ones impacting payroll.
-      const data = await debitRequestsApi.listHr(token, { status: 'approved' });
+      // Use the finance-gated endpoint (admin/accountant) — the HR /debit-requests
+      // endpoint is restricted to HR staff and returns 403 ("Forbidden") for Finance.
+      const data = await financeCenterApi.advances(token, { status: 'approved' });
       data.sort((a, b) => (a.createdAt && b.createdAt ? b.createdAt.localeCompare(a.createdAt) : 0));
       setRows(data);
     } catch (e) {

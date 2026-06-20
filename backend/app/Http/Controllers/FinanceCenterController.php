@@ -132,9 +132,10 @@ class FinanceCenterController extends Controller
             ];
         }
 
-        // Expense breakdown by category
+        // Expense breakdown by category — only 'paid' so the pie total matches the
+        // Expenses KPI (which is derived from paid expenses' payment transactions).
         $byCategory = Expense::query()
-            ->where('status', '!=', 'rejected')
+            ->where('status', 'paid')
             ->whereBetween('date', [$monthStart, $now])
             ->selectRaw('category_id, SUM(amount) as total')
             ->groupBy('category_id')
@@ -351,9 +352,68 @@ class FinanceCenterController extends Controller
             'attachment_path' => 'nullable|string',
         ]);
         $data['submitted_by'] = $request->user()->id;
-        $data['status'] = 'pending';
+        // Expenses apply immediately: record as paid and emit the matching payment
+        // transaction so the Overview KPI / net / trend reflect it the moment it's
+        // added (no separate approval step).
+        $data['status'] = 'paid';
+        $data['approved_by'] = $request->user()->id;
+        $data['approved_at'] = now();
         $e = Expense::create($data);
+        $this->syncExpensePaymentTransaction($e, $request->user()->id);
         return response()->json($e->toApiArray(), 201);
+    }
+
+    public function updateExpense(Request $request, $id)
+    {
+        if ($r = $this->gate($request)) return $r;
+        $e = Expense::findOrFail($id);
+        $data = $request->validate([
+            'category_id' => 'sometimes|required|exists:expense_categories,id',
+            'description' => 'sometimes|required|string',
+            'amount' => 'sometimes|required|numeric|min:0',
+            'date' => 'sometimes|required|date',
+            'supplier_name' => 'nullable|string|max:255',
+            'supplier_id' => 'nullable|exists:suppliers,id',
+            'payment_method' => 'nullable|string|max:30',
+            'reference_no' => 'nullable|string|max:80',
+            'attachment_path' => 'nullable|string',
+        ]);
+        $e->update($data);
+
+        // Keep the Finance ledger in sync after an edit: if the expense is paid,
+        // update its payment transaction in place (updateOrCreate) so the changed
+        // amount/date/etc. flow straight into the Overview KPI / net / trend;
+        // otherwise make sure no stale payment row lingers.
+        if ($e->status === Expense::STATUS_PAID) {
+            $this->syncExpensePaymentTransaction($e, $e->approved_by ?? $request->user()->id);
+        } else {
+            FinanceTransaction::where('ref_type', 'expense')->where('ref_id', $e->id)->delete();
+        }
+
+        return response()->json($e->fresh()->toApiArray());
+    }
+
+    /**
+     * Mirror a paid expense into a `payment` finance_transaction (one per expense).
+     * The Overview's expense KPI, net profit and 12-month trend are all derived
+     * from these transactions, so this is what makes an expense "count".
+     */
+    private function syncExpensePaymentTransaction(Expense $e, $userId): void
+    {
+        FinanceTransaction::updateOrCreate(
+            ['ref_type' => 'expense', 'ref_id' => $e->id, 'type' => 'payment'],
+            [
+                'source' => 'expense',
+                'party_name' => $e->supplier_name,
+                'amount' => $e->amount,
+                'method' => $e->payment_method,
+                'reference_no' => $e->reference_no,
+                'date' => $e->date,
+                'notes' => $e->description,
+                'status' => 'completed',
+                'created_by' => $userId,
+            ]
+        );
     }
 
     public function decideExpense(Request $request, $id)
@@ -372,22 +432,12 @@ class FinanceCenterController extends Controller
         }
         $e->save();
 
-        // Emit a payment finance_transaction when marked paid
+        // Emit a payment finance_transaction when marked paid; remove it if the
+        // expense is approved-but-not-paid or rejected so the Overview stays correct.
         if ($data['status'] === 'paid') {
-            FinanceTransaction::updateOrCreate(
-                ['ref_type' => 'expense', 'ref_id' => $e->id, 'type' => 'payment'],
-                [
-                    'source' => 'expense',
-                    'party_name' => $e->supplier_name,
-                    'amount' => $e->amount,
-                    'method' => $e->payment_method,
-                    'reference_no' => $e->reference_no,
-                    'date' => $e->date,
-                    'notes' => $e->description,
-                    'status' => 'completed',
-                    'created_by' => $request->user()->id,
-                ]
-            );
+            $this->syncExpensePaymentTransaction($e, $request->user()->id);
+        } else {
+            FinanceTransaction::where('ref_type', 'expense')->where('ref_id', $e->id)->delete();
         }
 
         return response()->json($e->toApiArray());
